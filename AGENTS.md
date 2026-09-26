@@ -14,6 +14,9 @@ The project follows hexagonal architecture. Keep responsibilities separated.
 | Application | `pkg/application` | Compose adapters and use cases, then manage service lifecycle. |
 | Composition roots | `cmd/metrics`, `cmd/server` | Resolve configuration, construct the application, and delegate execution to it. `cmd/server` is required by the template's integration workflow. |
 
+Keep `cmd/agent` buildable even before its implementation increment: the template
+workflow builds the agent binary for every PR.
+
 Do not move infrastructure models or YAML schemas into `entities`. Configuration is
 an adapter concern.
 
