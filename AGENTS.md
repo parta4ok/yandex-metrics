@@ -12,7 +12,7 @@ The project follows hexagonal architecture. Keep responsibilities separated.
 | Adapters | `internal/adapter` | Infrastructure details such as YAML configuration and in-memory storage. |
 | HTTP transport | `internal/port/http/public` | HTTP routing, request parsing, response formatting, and mapping domain errors to HTTP statuses. |
 | Application | `pkg/application` | Compose adapters and use cases, then manage service lifecycle. |
-| Composition roots | `cmd/metrics`, `cmd/server` | Resolve configuration, construct the application, and delegate execution to it. `cmd/server` is required by the template's integration workflow. |
+| Composition root | `cmd/server` | Resolve configuration, construct the application, and delegate execution to it. This entry point is required by the template's integration workflow. |
 
 Keep `cmd/agent` buildable even before its implementation increment: the template
 workflow builds the agent binary for every PR.
