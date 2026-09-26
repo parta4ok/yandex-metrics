@@ -12,7 +12,7 @@ The project follows hexagonal architecture. Keep responsibilities separated.
 | Adapters | `internal/adapter` | Infrastructure details such as YAML configuration and in-memory storage. |
 | HTTP transport | `internal/port/http/public` | HTTP routing, request parsing, response formatting, and mapping domain errors to HTTP statuses. |
 | Application | `pkg/application` | Compose adapters and use cases, then manage service lifecycle. |
-| Composition root | `cmd/metrics` | Resolve configuration, construct the application, and delegate execution to it. |
+| Composition roots | `cmd/metrics`, `cmd/server` | Resolve configuration, construct the application, and delegate execution to it. `cmd/server` is required by the template's integration workflow. |
 
 Do not move infrastructure models or YAML schemas into `entities`. Configuration is
 an adapter concern.
@@ -90,7 +90,7 @@ an adapter concern.
 - Configuration path precedence is:
 
   ```text
-  -config flag > METRIC_CONFIG_PATH environment variable
+  -config flag > METRIC_CONFIG_PATH environment variable > config/metrics.yml
   ```
 
 - Keep configuration keys in adapter constants. Do not expose Koanf outside the
