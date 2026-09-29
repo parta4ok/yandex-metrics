@@ -7,8 +7,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/parta4ok/yandex-metrics/internal/adapter/config"
-	"github.com/parta4ok/yandex-metrics/pkg/application"
+	"github.com/parta4ok/yandex-metrics/metrics/pkg/application"
 )
 
 const (
@@ -26,12 +25,7 @@ func run() error {
 	configPath := flag.String("config", "", "path to the configuration file")
 	flag.Parse()
 
-	cfg, err := config.NewConfig(resolveConfigPath(*configPath))
-	if err != nil {
-		return errors.Wrap(err, "run metrics service. load config")
-	}
-
-	app, err := application.New(cfg)
+	app, err := application.New(resolveConfigPath(*configPath))
 	if err != nil {
 		return errors.Wrap(err, "run metrics service. create application")
 	}

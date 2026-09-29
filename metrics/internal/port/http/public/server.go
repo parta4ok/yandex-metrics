@@ -10,8 +10,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/pkg/errors"
 
-	"github.com/parta4ok/yandex-metrics/internal/entities"
-	"github.com/parta4ok/yandex-metrics/internal/port"
+	"github.com/parta4ok/yandex-metrics/metrics/internal/entities"
+	"github.com/parta4ok/yandex-metrics/metrics/internal/port"
 )
 
 const (
@@ -36,6 +36,7 @@ var (
 
 type Server struct {
 	service         port.MetricServiceProvider
+	handler         http.Handler
 	httpServer      *http.Server
 	certificateFile string
 	keyFile         string
@@ -72,10 +73,11 @@ func NewServer(address string, service port.MetricServiceProvider, options ...Op
 
 	router := chi.NewRouter()
 	server.registerRoutes(router)
+	server.handler = router
 
 	server.httpServer = &http.Server{
 		Addr:    address,
-		Handler: router,
+		Handler: server,
 	}
 
 	return server, nil
@@ -93,6 +95,10 @@ func (s *Server) Start(ctx context.Context) error {
 
 func (s *Server) Stop(ctx context.Context) error {
 	return s.httpServer.Shutdown(ctx)
+}
+
+func (s *Server) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
+	s.handler.ServeHTTP(resp, req)
 }
 
 func (s *Server) registerRoutes(router chi.Router) {

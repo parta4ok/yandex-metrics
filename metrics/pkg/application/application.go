@@ -9,11 +9,12 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/parta4ok/yandex-metrics/internal/adapter/storage/inmemory"
-	"github.com/parta4ok/yandex-metrics/internal/cases"
-	"github.com/parta4ok/yandex-metrics/internal/entities"
-	"github.com/parta4ok/yandex-metrics/internal/port"
-	"github.com/parta4ok/yandex-metrics/internal/port/http/public"
+	"github.com/parta4ok/yandex-metrics/metrics/internal/adapter/config"
+	"github.com/parta4ok/yandex-metrics/metrics/internal/adapter/storage/inmemory"
+	"github.com/parta4ok/yandex-metrics/metrics/internal/cases"
+	"github.com/parta4ok/yandex-metrics/metrics/internal/entities"
+	"github.com/parta4ok/yandex-metrics/metrics/internal/port"
+	"github.com/parta4ok/yandex-metrics/metrics/internal/port/http/public"
 )
 
 type Application struct {
@@ -24,7 +25,16 @@ type Application struct {
 	startStoppers []StartStopper
 }
 
-func New(config ConfigProvider) (*Application, error) {
+func New(configPath string) (*Application, error) {
+	config, err := config.NewConfig(configPath)
+	if err != nil {
+		return nil, errors.Wrap(err, "new application. load config")
+	}
+
+	return newApplication(config)
+}
+
+func newApplication(config ConfigProvider) (*Application, error) {
 	if config == nil {
 		return nil, errors.Wrap(entities.ErrInvalidParam, "new application. config is nil")
 	}

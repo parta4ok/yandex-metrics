@@ -8,7 +8,7 @@ import (
 	"github.com/knadh/koanf/v2"
 	"github.com/pkg/errors"
 
-	"github.com/parta4ok/yandex-metrics/internal/entities"
+	"github.com/parta4ok/yandex-metrics/metrics/internal/entities"
 )
 
 const (

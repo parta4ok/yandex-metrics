@@ -5,7 +5,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/parta4ok/yandex-metrics/internal/entities"
+	"github.com/parta4ok/yandex-metrics/metrics/internal/entities"
 )
 
 type MetricsService struct {
