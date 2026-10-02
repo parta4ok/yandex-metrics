@@ -112,6 +112,72 @@ func Test_ServerUpdateMetric_InternalError(t *testing.T) {
 	require.Equal(t, http.StatusInternalServerError, resp.Code)
 }
 
+func TestServerUpdateMetric_InvalidRequest(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		method      string
+		target      string
+		contentType string
+		status      int
+	}{
+		{
+			name:        "invalid content type",
+			method:      http.MethodPost,
+			target:      "/update/counter/metric/1",
+			contentType: "application/json",
+			status:      http.StatusBadRequest,
+		},
+		{
+			name:        "content type parameters are accepted",
+			method:      http.MethodPost,
+			target:      "/update/gauge/metric/1.5",
+			contentType: "text/plain; charset=utf-8",
+			status:      http.StatusOK,
+		},
+		{
+			name:        "invalid metric type",
+			method:      http.MethodPost,
+			target:      "/update/unknown/metric/1",
+			contentType: "text/plain",
+			status:      http.StatusBadRequest,
+		},
+		{
+			name:        "invalid counter value",
+			method:      http.MethodPost,
+			target:      "/update/counter/metric/not-a-number",
+			contentType: "text/plain",
+			status:      http.StatusBadRequest,
+		},
+		{
+			name:        "missing route value",
+			method:      http.MethodPost,
+			target:      "/update/counter/metric",
+			contentType: "text/plain",
+			status:      http.StatusNotFound,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			server, service := newTestServer(t)
+			if tt.status == http.StatusOK {
+				service.EXPECT().UpdateMetric(gomock.Any(), gomock.Any()).Return(nil)
+			}
+
+			req := httptest.NewRequest(tt.method, tt.target, nil)
+			req.Header.Set("Content-Type", tt.contentType)
+			resp := httptest.NewRecorder()
+			server.ServeHTTP(resp, req)
+
+			require.Equal(t, tt.status, resp.Code)
+		})
+	}
+}
+
 func newTestServer(t *testing.T) (*public.Server, *testdata.MockMetricServiceProvider) {
 	t.Helper()
 

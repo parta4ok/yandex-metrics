@@ -61,11 +61,8 @@ func (m *Metrics) Validate() error {
 	if m == nil {
 		return errors.Wrap(ErrInvalidParam, "validate metrics. metrics is nil")
 	}
-	if m.id == "" {
-		return errors.Wrap(ErrInvalidParam, "validate metrics. id is empty")
-	}
-	if !m.mType.IsValid() {
-		return errors.Wrap(ErrInvalidParam, "validate metrics. metric type is invalid")
+	if m.id == "" || !m.mType.IsValid() {
+		return errors.Wrap(ErrInvalidParam, "validate metrics. required fields are invalid")
 	}
 
 	switch m.mType {
