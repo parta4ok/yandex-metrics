@@ -2,6 +2,7 @@ package inmemory
 
 import (
 	"context"
+	"sort"
 	"sync"
 
 	"github.com/pkg/errors"
@@ -60,6 +61,72 @@ func (s *Storage) UpdateMetric(ctx context.Context, metric *entities.Metrics) er
 	s.metrics[key] = metricCopy
 
 	return nil
+}
+
+func (s *Storage) GetMetric(
+	ctx context.Context,
+	id string,
+	mType entities.MType,
+) (*entities.Metrics, error) {
+	if err := validateContext(ctx); err != nil {
+		return nil, errors.Wrap(err, "get metric. context")
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if err := validateContext(ctx); err != nil {
+		return nil, errors.Wrap(err, "get metric. context")
+	}
+
+	metric, ok := s.metrics[metricKey{id: id, mType: mType}]
+	if !ok {
+		return nil, errors.Wrap(entities.ErrNotFound, "get metric. metric not found")
+	}
+
+	metricCopy, err := cloneMetric(metric)
+	if err != nil {
+		return nil, errors.Wrap(err, "get metric. clone metric")
+	}
+
+	return metricCopy, nil
+}
+
+func (s *Storage) ListMetrics(ctx context.Context) ([]*entities.Metrics, error) {
+	if err := validateContext(ctx); err != nil {
+		return nil, errors.Wrap(err, "list metrics. context")
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if err := validateContext(ctx); err != nil {
+		return nil, errors.Wrap(err, "list metrics. context")
+	}
+
+	keys := make([]metricKey, 0, len(s.metrics))
+	for key := range s.metrics {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i int, j int) bool {
+		if keys[i].id == keys[j].id {
+			return keys[i].mType < keys[j].mType
+		}
+
+		return keys[i].id < keys[j].id
+	})
+
+	metrics := make([]*entities.Metrics, 0, len(keys))
+	for _, key := range keys {
+		metricCopy, err := cloneMetric(s.metrics[key])
+		if err != nil {
+			return nil, errors.Wrap(err, "list metrics. clone metric")
+		}
+
+		metrics = append(metrics, metricCopy)
+	}
+
+	return metrics, nil
 }
 
 func (s *Storage) processCounter(metric *entities.Metrics) error {

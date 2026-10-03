@@ -34,6 +34,46 @@ func TestStorage_UpdateMetric_CancelledContext(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled)
 }
 
+func TestStorage_GetMetricAndListMetrics(t *testing.T) {
+	t.Parallel()
+
+	storage := inmemory.NewStorage()
+	require.NoError(t, storage.UpdateMetric(context.Background(), newCounter(t, "requests", 2)))
+	require.NoError(t, storage.UpdateMetric(context.Background(), newCounter(t, "requests", 3)))
+	require.NoError(t, storage.UpdateMetric(context.Background(), newGauge(t, "memory", 1.5)))
+
+	metric, err := storage.GetMetric(context.Background(), "requests", entities.Counter)
+	require.NoError(t, err)
+	require.Equal(t, int64(5), *metric.Delta())
+
+	metric.SetDelta(new(int64))
+	storedMetric, err := storage.GetMetric(context.Background(), "requests", entities.Counter)
+	require.NoError(t, err)
+	require.Equal(t, int64(5), *storedMetric.Delta())
+
+	_, err = storage.GetMetric(context.Background(), "unknown", entities.Gauge)
+	require.ErrorIs(t, err, entities.ErrNotFound)
+
+	metrics, err := storage.ListMetrics(context.Background())
+	require.NoError(t, err)
+	require.Len(t, metrics, 2)
+	require.Equal(t, "memory", metrics[0].ID())
+	require.Equal(t, "requests", metrics[1].ID())
+}
+
+func TestStorage_ReadCancelledContext(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	storage := inmemory.NewStorage()
+
+	_, err := storage.GetMetric(ctx, "requests", entities.Counter)
+	require.ErrorIs(t, err, context.Canceled)
+	_, err = storage.ListMetrics(ctx)
+	require.ErrorIs(t, err, context.Canceled)
+}
+
 func newCounter(t *testing.T, id string, delta int64) *entities.Metrics {
 	t.Helper()
 
