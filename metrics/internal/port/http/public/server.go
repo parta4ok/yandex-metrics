@@ -3,6 +3,7 @@ package public
 import (
 	"bytes"
 	"context"
+	_ "embed"
 	"fmt"
 	"html/template"
 	"mime"
@@ -31,9 +32,12 @@ const (
 	valueBasePath  = "/value"
 )
 
-var metricListTemplate = template.Must(template.New("metrics").Parse(
-	"<!doctype html><html><body><ul>{{range .}}<li>{{.Name}} ({{.Type}}): {{.Value}}</li>{{end}}</ul></body></html>",
-))
+//go:embed templates/metrics.html
+var metricListTemplateContent string
+
+var metricListTemplate = template.Must(
+	template.New("metrics.html").Parse(metricListTemplateContent),
+)
 
 type Server struct {
 	service         port.MetricServiceProvider
