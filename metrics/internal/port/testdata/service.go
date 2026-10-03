@@ -41,6 +41,36 @@ func (m *MockMetricServiceProvider) EXPECT() *MockMetricServiceProviderMockRecor
 	return m.recorder
 }
 
+// GetMetric mocks base method.
+func (m *MockMetricServiceProvider) GetMetric(ctx context.Context, id string, mType entities.MType) (*entities.Metrics, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetMetric", ctx, id, mType)
+	ret0, _ := ret[0].(*entities.Metrics)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetMetric indicates an expected call of GetMetric.
+func (mr *MockMetricServiceProviderMockRecorder) GetMetric(ctx, id, mType any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMetric", reflect.TypeOf((*MockMetricServiceProvider)(nil).GetMetric), ctx, id, mType)
+}
+
+// ListMetrics mocks base method.
+func (m *MockMetricServiceProvider) ListMetrics(ctx context.Context) ([]*entities.Metrics, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListMetrics", ctx)
+	ret0, _ := ret[0].([]*entities.Metrics)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListMetrics indicates an expected call of ListMetrics.
+func (mr *MockMetricServiceProviderMockRecorder) ListMetrics(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListMetrics", reflect.TypeOf((*MockMetricServiceProvider)(nil).ListMetrics), ctx)
+}
+
 // UpdateMetric mocks base method.
 func (m *MockMetricServiceProvider) UpdateMetric(ctx context.Context, metric *entities.Metrics) error {
 	m.ctrl.T.Helper()

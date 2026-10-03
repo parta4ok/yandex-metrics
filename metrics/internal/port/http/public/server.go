@@ -1,8 +1,10 @@
 package public
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"html/template"
 	"mime"
 	"net/http"
 	"strconv"
@@ -18,21 +20,20 @@ const (
 	contentTypeHeader    = "Content-Type"
 	textPlainMediaType   = "text/plain"
 	textPlainContentType = textPlainMediaType + "; charset=utf-8"
+	textHTMLContentType  = "text/html; charset=utf-8"
 	metricTypeParam      = "type"
 	metricNameParam      = "name"
 	metricValueParam     = "value"
 )
 
-var (
-	updateBasePath   = "/update"
-	updateMetricPath = fmt.Sprintf(
-		"%s/{%s}/{%s}/{%s}",
-		updateBasePath,
-		metricTypeParam,
-		metricNameParam,
-		metricValueParam,
-	)
+const (
+	updateBasePath = "/update"
+	valueBasePath  = "/value"
 )
+
+var metricListTemplate = template.Must(template.New("metrics").Parse(
+	"<!doctype html><html><body><ul>{{range .}}<li>{{.Name}} ({{.Type}}): {{.Value}}</li>{{end}}</ul></body></html>",
+))
 
 type Server struct {
 	service         port.MetricServiceProvider
@@ -102,7 +103,19 @@ func (s *Server) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 }
 
 func (s *Server) registerRoutes(router chi.Router) {
-	router.Method(http.MethodPost, updateMetricPath, http.HandlerFunc(s.updateMetric))
+	router.Get("/", s.listMetrics)
+	router.Route(updateBasePath, func(router chi.Router) {
+		router.Post(
+			fmt.Sprintf("/{%s}/{%s}/{%s}", metricTypeParam, metricNameParam, metricValueParam),
+			s.updateMetric,
+		)
+	})
+	router.Route(valueBasePath, func(router chi.Router) {
+		router.Get(
+			fmt.Sprintf("/{%s}/{%s}", metricTypeParam, metricNameParam),
+			s.getMetric,
+		)
+	})
 }
 
 func (s *Server) updateMetric(resp http.ResponseWriter, req *http.Request) {
@@ -128,6 +141,46 @@ func (s *Server) updateMetric(resp http.ResponseWriter, req *http.Request) {
 
 	resp.Header().Set(contentTypeHeader, textPlainContentType)
 	resp.WriteHeader(http.StatusOK)
+}
+
+func (s *Server) getMetric(resp http.ResponseWriter, req *http.Request) {
+	metric, err := s.service.GetMetric(
+		req.Context(),
+		chi.URLParam(req, metricNameParam),
+		entities.MType(chi.URLParam(req, metricTypeParam)),
+	)
+	if err != nil {
+		s.handleError(resp, err)
+		return
+	}
+
+	value, err := metricTextValue(metric)
+	if err != nil {
+		s.handleError(resp, err)
+		return
+	}
+
+	resp.Header().Set(contentTypeHeader, textPlainContentType)
+	resp.WriteHeader(http.StatusOK)
+	_, _ = resp.Write([]byte(value))
+}
+
+func (s *Server) listMetrics(resp http.ResponseWriter, req *http.Request) {
+	metrics, err := s.service.ListMetrics(req.Context())
+	if err != nil {
+		s.handleError(resp, err)
+		return
+	}
+
+	body, err := metricListBody(metrics)
+	if err != nil {
+		s.handleError(resp, err)
+		return
+	}
+
+	resp.Header().Set(contentTypeHeader, textHTMLContentType)
+	resp.WriteHeader(http.StatusOK)
+	_, _ = resp.Write(body)
 }
 
 func (s *Server) handleError(resp http.ResponseWriter, err error) {
@@ -173,4 +226,56 @@ func (s *Server) newMetric(id string, mType entities.MType, value string) (*enti
 	}
 
 	return metric, nil
+}
+
+func metricTextValue(metric *entities.Metrics) (string, error) {
+	if metric == nil {
+		return "", errors.Wrap(entities.ErrInternalError, "metric text value. metric is nil")
+	}
+
+	switch metric.MType() {
+	case entities.Counter:
+		if metric.Delta() == nil {
+			return "", errors.Wrap(entities.ErrInternalError, "metric text value. counter delta is nil")
+		}
+
+		return strconv.FormatInt(*metric.Delta(), 10), nil
+	case entities.Gauge:
+		if metric.Value() == nil {
+			return "", errors.Wrap(entities.ErrInternalError, "metric text value. gauge value is nil")
+		}
+
+		return strconv.FormatFloat(*metric.Value(), 'f', -1, 64), nil
+	default:
+		return "", errors.Wrap(entities.ErrInternalError, "metric text value. metric type is invalid")
+	}
+}
+
+func metricListBody(metrics []*entities.Metrics) ([]byte, error) {
+	type metricView struct {
+		Name  string
+		Type  entities.MType
+		Value string
+	}
+
+	views := make([]metricView, 0, len(metrics))
+	for _, metric := range metrics {
+		value, err := metricTextValue(metric)
+		if err != nil {
+			return nil, errors.Wrap(err, "metric list body. get metric value")
+		}
+
+		views = append(views, metricView{
+			Name:  metric.ID(),
+			Type:  metric.MType(),
+			Value: value,
+		})
+	}
+
+	var body bytes.Buffer
+	if err := metricListTemplate.Execute(&body, views); err != nil {
+		return nil, errors.Wrap(err, "metric list body. execute template")
+	}
+
+	return body.Bytes(), nil
 }

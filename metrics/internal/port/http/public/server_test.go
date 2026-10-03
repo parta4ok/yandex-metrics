@@ -178,6 +178,148 @@ func TestServerUpdateMetric_InvalidRequest(t *testing.T) {
 	}
 }
 
+func TestServerGetMetric(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		target       string
+		setupService func(*testing.T, *testdata.MockMetricServiceProvider)
+		status       int
+		body         string
+	}{
+		{
+			name:   "counter",
+			target: "/value/counter/requests",
+			setupService: func(t *testing.T, service *testdata.MockMetricServiceProvider) {
+				service.EXPECT().
+					GetMetric(gomock.Any(), "requests", entities.Counter).
+					Return(newCounterMetric(t, "requests", 42), nil)
+			},
+			status: http.StatusOK,
+			body:   "42",
+		},
+		{
+			name:   "gauge",
+			target: "/value/gauge/memory",
+			setupService: func(t *testing.T, service *testdata.MockMetricServiceProvider) {
+				service.EXPECT().
+					GetMetric(gomock.Any(), "memory", entities.Gauge).
+					Return(newGaugeMetric(t, "memory", 1.5), nil)
+			},
+			status: http.StatusOK,
+			body:   "1.5",
+		},
+		{
+			name:   "not found",
+			target: "/value/gauge/memory",
+			setupService: func(_ *testing.T, service *testdata.MockMetricServiceProvider) {
+				service.EXPECT().
+					GetMetric(gomock.Any(), "memory", entities.Gauge).
+					Return(nil, entities.ErrNotFound)
+			},
+			status: http.StatusNotFound,
+		},
+		{
+			name:   "invalid type",
+			target: "/value/unknown/memory",
+			setupService: func(_ *testing.T, service *testdata.MockMetricServiceProvider) {
+				service.EXPECT().
+					GetMetric(gomock.Any(), "memory", entities.MType("unknown")).
+					Return(nil, entities.ErrInvalidParam)
+			},
+			status: http.StatusBadRequest,
+		},
+		{
+			name:   "service error",
+			target: "/value/gauge/memory",
+			setupService: func(_ *testing.T, service *testdata.MockMetricServiceProvider) {
+				service.EXPECT().
+					GetMetric(gomock.Any(), "memory", entities.Gauge).
+					Return(nil, entities.ErrInternalError)
+			},
+			status: http.StatusInternalServerError,
+		},
+		{
+			name:   "invalid metric from service",
+			target: "/value/gauge/memory",
+			setupService: func(_ *testing.T, service *testdata.MockMetricServiceProvider) {
+				service.EXPECT().
+					GetMetric(gomock.Any(), "memory", entities.Gauge).
+					Return(&entities.Metrics{}, nil)
+			},
+			status: http.StatusInternalServerError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			server, service := newTestServer(t)
+			tt.setupService(t, service)
+
+			resp := httptest.NewRecorder()
+			server.ServeHTTP(resp, httptest.NewRequest(http.MethodGet, tt.target, nil))
+
+			require.Equal(t, tt.status, resp.Code)
+			if tt.status == http.StatusOK {
+				require.Equal(t, "text/plain; charset=utf-8", resp.Header().Get("Content-Type"))
+				require.Equal(t, tt.body, resp.Body.String())
+			}
+		})
+	}
+}
+
+func TestServerListMetrics(t *testing.T) {
+	t.Parallel()
+
+	t.Run("success", func(t *testing.T) {
+		t.Parallel()
+
+		server, service := newTestServer(t)
+		service.EXPECT().ListMetrics(gomock.Any()).Return(
+			[]*entities.Metrics{
+				newCounterMetric(t, "requests", 42),
+				newGaugeMetric(t, "<memory>", 1.5),
+			},
+			nil,
+		)
+
+		resp := httptest.NewRecorder()
+		server.ServeHTTP(resp, httptest.NewRequest(http.MethodGet, "/", nil))
+
+		require.Equal(t, http.StatusOK, resp.Code)
+		require.Equal(t, "text/html; charset=utf-8", resp.Header().Get("Content-Type"))
+		require.Contains(t, resp.Body.String(), "requests (counter): 42")
+		require.Contains(t, resp.Body.String(), "&lt;memory&gt; (gauge): 1.5")
+	})
+
+	t.Run("service error", func(t *testing.T) {
+		t.Parallel()
+
+		server, service := newTestServer(t)
+		service.EXPECT().ListMetrics(gomock.Any()).Return(nil, entities.ErrInternalError)
+
+		resp := httptest.NewRecorder()
+		server.ServeHTTP(resp, httptest.NewRequest(http.MethodGet, "/", nil))
+
+		require.Equal(t, http.StatusInternalServerError, resp.Code)
+	})
+
+	t.Run("invalid metric from service", func(t *testing.T) {
+		t.Parallel()
+
+		server, service := newTestServer(t)
+		service.EXPECT().ListMetrics(gomock.Any()).Return([]*entities.Metrics{nil}, nil)
+
+		resp := httptest.NewRecorder()
+		server.ServeHTTP(resp, httptest.NewRequest(http.MethodGet, "/", nil))
+
+		require.Equal(t, http.StatusInternalServerError, resp.Code)
+	})
+}
+
 func newTestServer(t *testing.T) (*public.Server, *testdata.MockMetricServiceProvider) {
 	t.Helper()
 
@@ -200,4 +342,24 @@ func newUpdateMetricRequest() *http.Request {
 	req.Header.Set("Content-Type", "text/plain")
 
 	return req
+}
+
+func newCounterMetric(t *testing.T, id string, delta int64) *entities.Metrics {
+	t.Helper()
+
+	metric, err := entities.NewMetrics(id, entities.Counter)
+	require.NoError(t, err)
+	metric.SetDelta(&delta)
+
+	return metric
+}
+
+func newGaugeMetric(t *testing.T, id string, value float64) *entities.Metrics {
+	t.Helper()
+
+	metric, err := entities.NewMetrics(id, entities.Gauge)
+	require.NoError(t, err)
+	metric.SetValue(&value)
+
+	return metric
 }

@@ -10,4 +10,6 @@ import (
 
 type MetricServiceProvider interface {
 	UpdateMetric(ctx context.Context, metric *entities.Metrics) error
+	GetMetric(ctx context.Context, id string, mType entities.MType) (*entities.Metrics, error)
+	ListMetrics(ctx context.Context) ([]*entities.Metrics, error)
 }
