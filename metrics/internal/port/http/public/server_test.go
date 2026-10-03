@@ -137,6 +137,12 @@ func TestServerUpdateMetric_InvalidRequest(t *testing.T) {
 			status:      http.StatusOK,
 		},
 		{
+			name:   "missing content type",
+			method: http.MethodPost,
+			target: "/update/gauge/metric/1.5",
+			status: http.StatusOK,
+		},
+		{
 			name:        "invalid metric type",
 			method:      http.MethodPost,
 			target:      "/update/unknown/metric/1",

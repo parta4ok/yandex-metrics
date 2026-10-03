@@ -200,7 +200,12 @@ func (s *Server) handleError(resp http.ResponseWriter, err error) {
 }
 
 func (s *Server) validateContentType(req *http.Request) error {
-	contentType, _, err := mime.ParseMediaType(req.Header.Get(contentTypeHeader))
+	contentTypeHeaderValue := req.Header.Get(contentTypeHeader)
+	if contentTypeHeaderValue == "" {
+		return nil
+	}
+
+	contentType, _, err := mime.ParseMediaType(contentTypeHeaderValue)
 	if err != nil || contentType != textPlainMediaType {
 		return errors.Wrap(entities.ErrInvalidParam, "validate content type. expected text/plain")
 	}
