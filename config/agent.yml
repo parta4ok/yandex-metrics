@@ -6,5 +6,5 @@ agent:
     report_interval: 10s
   http:
     metrics:
-      address: "http://localhost:8080"
+      address: "localhost:8080"
       timeout: 5s

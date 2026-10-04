@@ -198,6 +198,15 @@ func TestAgentService_SendMetrics(t *testing.T) {
 		require.ErrorIs(t, service.SendMetrics(context.Background()), entities.ErrInternalError)
 	})
 
+	t.Run("skips reporting before the first snapshot", func(t *testing.T) {
+		t.Parallel()
+
+		service, _, _, storage := newService(t)
+		storage.EXPECT().GetAgentData(gomock.Any()).Return(nil, entities.ErrNotFound)
+
+		require.NoError(t, service.SendMetrics(context.Background()))
+	})
+
 	t.Run("wraps nil snapshot", func(t *testing.T) {
 		t.Parallel()
 

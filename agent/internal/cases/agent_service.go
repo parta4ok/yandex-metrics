@@ -65,6 +65,10 @@ func (s *AgentService) UpdateMetrics(ctx context.Context) error {
 func (s *AgentService) SendMetrics(ctx context.Context) error {
 	metrics, err := s.storage.GetAgentData(ctx)
 	if err != nil {
+		if errors.Is(err, entities.ErrNotFound) {
+			return nil
+		}
+
 		return errors.Wrap(err, "send metrics. get agent data")
 	}
 

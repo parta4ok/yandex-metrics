@@ -27,13 +27,13 @@ type Application struct {
 	startStoppers       []StartStopper
 }
 
-func New(configPath string) (*Application, error) {
+func New(configPath string, overrides Overrides) (*Application, error) {
 	config, err := config.NewConfig(configPath)
 	if err != nil {
 		return nil, errors.Wrap(err, "new application. load config")
 	}
 
-	return newApplication(config)
+	return newApplication(resolveConfig(config, overrides))
 }
 
 func newApplication(config ConfigProvider) (*Application, error) {

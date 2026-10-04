@@ -24,9 +24,10 @@ func TestNewClient(t *testing.T) {
 		wantError error
 	}{
 		{name: "empty address", client: httpClient, wantError: entities.ErrInvalidParam},
-		{name: "invalid address", address: "localhost:8080", client: httpClient, wantError: entities.ErrInvalidParam},
+		{name: "invalid address", address: "://metrics", client: httpClient, wantError: entities.ErrInvalidParam},
 		{name: "nil client", address: "http://localhost:8080", wantError: entities.ErrInvalidParam},
-		{name: "success", address: "http://localhost:8080/", client: httpClient},
+		{name: "bare address", address: "localhost:8080", client: httpClient},
+		{name: "URL address", address: "http://localhost:8080/", client: httpClient},
 	}
 
 	for _, tt := range tests {

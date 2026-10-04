@@ -36,6 +36,10 @@ func NewClient(serverAddress string, client *http.Client) (*Client, error) {
 		return nil, errors.Wrap(entities.ErrInvalidParam, "new metrics client. HTTP client is nil")
 	}
 
+	if !strings.Contains(serverAddress, "://") {
+		serverAddress = "http://" + serverAddress
+	}
+
 	address, err := url.Parse(serverAddress)
 	if err != nil || address.Scheme == "" || address.Host == "" {
 		return nil, errors.Wrap(entities.ErrInvalidParam, "new metrics client. server address is invalid")
