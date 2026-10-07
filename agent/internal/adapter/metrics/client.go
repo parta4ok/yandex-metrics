@@ -13,6 +13,7 @@ import (
 
 	"github.com/parta4ok/yandex-metrics/agent/internal/cases"
 	"github.com/parta4ok/yandex-metrics/agent/internal/entities"
+	toolkitlogger "github.com/parta4ok/yandex-metrics/toolkit/logger"
 )
 
 const (
@@ -26,14 +27,22 @@ var _ cases.MetricServiceClient = (*Client)(nil)
 type Client struct {
 	serverAddress string
 	client        *http.Client
+	logger        toolkitlogger.Logger
 }
 
-func NewClient(serverAddress string, client *http.Client) (*Client, error) {
+func NewClient(
+	serverAddress string,
+	client *http.Client,
+	logger toolkitlogger.Logger,
+) (*Client, error) {
 	if serverAddress == "" {
 		return nil, errors.Wrap(entities.ErrInvalidParam, "new metrics client. server address is empty")
 	}
 	if client == nil {
 		return nil, errors.Wrap(entities.ErrInvalidParam, "new metrics client. HTTP client is nil")
+	}
+	if logger == nil {
+		return nil, errors.Wrap(entities.ErrInvalidParam, "new metrics client. logger is nil")
 	}
 
 	if !strings.Contains(serverAddress, "://") {
@@ -48,6 +57,7 @@ func NewClient(serverAddress string, client *http.Client) (*Client, error) {
 	return &Client{
 		serverAddress: strings.TrimRight(serverAddress, "/"),
 		client:        client,
+		logger:        logger,
 	}, nil
 }
 

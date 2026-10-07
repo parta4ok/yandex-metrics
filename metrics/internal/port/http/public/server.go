@@ -6,7 +6,6 @@ import (
 	_ "embed"
 	"fmt"
 	"html/template"
-	"log/slog"
 	"mime"
 	"net/http"
 	"strconv"
@@ -17,6 +16,7 @@ import (
 	"github.com/parta4ok/yandex-metrics/metrics/internal/entities"
 	"github.com/parta4ok/yandex-metrics/metrics/internal/port"
 	toolkitconfig "github.com/parta4ok/yandex-metrics/toolkit/config"
+	toolkitlogger "github.com/parta4ok/yandex-metrics/toolkit/logger"
 )
 
 const (
@@ -47,6 +47,7 @@ type Server struct {
 	httpServer      *http.Server
 	certificateFile string
 	keyFile         string
+	logger          toolkitlogger.Logger
 }
 
 type Option func(*Server)
@@ -61,6 +62,7 @@ func WithTLS(certificateFile string, keyFile string) Option {
 func NewServer(
 	config toolkitconfig.HTTPServerConfig,
 	service port.MetricServiceProvider,
+	logger toolkitlogger.Logger,
 	options ...Option,
 ) (*Server, error) {
 	if config == nil {
@@ -74,9 +76,13 @@ func NewServer(
 	if service == nil {
 		return nil, errors.Wrap(entities.ErrInvalidParam, "new http server. metrics service is nil")
 	}
+	if logger == nil {
+		return nil, errors.Wrap(entities.ErrInvalidParam, "new http server. logger is nil")
+	}
 
 	server := &Server{
 		service: service,
+		logger:  logger,
 	}
 	for _, option := range options {
 		if option != nil {
@@ -207,7 +213,7 @@ func (s *Server) handleError(resp http.ResponseWriter, err error) {
 		status = http.StatusNotFound
 	}
 	if status == http.StatusInternalServerError {
-		slog.Info("handle HTTP request error", "error", err)
+		s.logger.Warn("handle HTTP request error", "error", err)
 	}
 
 	http.Error(resp, http.StatusText(status), status)

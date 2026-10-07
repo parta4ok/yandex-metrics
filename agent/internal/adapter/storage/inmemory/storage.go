@@ -8,6 +8,7 @@ import (
 
 	"github.com/parta4ok/yandex-metrics/agent/internal/cases"
 	"github.com/parta4ok/yandex-metrics/agent/internal/entities"
+	toolkitlogger "github.com/parta4ok/yandex-metrics/toolkit/logger"
 )
 
 var _ cases.Storage = (*Storage)(nil)
@@ -15,11 +16,13 @@ var _ cases.Storage = (*Storage)(nil)
 type Storage struct {
 	mu      sync.Mutex
 	metrics map[entities.MName]*entities.Metric
+	logger  toolkitlogger.Logger
 }
 
-func NewStorage() *Storage {
+func NewStorage(logger toolkitlogger.Logger) *Storage {
 	return &Storage{
 		metrics: make(map[entities.MName]*entities.Metric),
+		logger:  logger,
 	}
 }
 

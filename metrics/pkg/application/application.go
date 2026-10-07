@@ -15,6 +15,8 @@ import (
 	"github.com/parta4ok/yandex-metrics/metrics/internal/entities"
 	"github.com/parta4ok/yandex-metrics/metrics/internal/port"
 	"github.com/parta4ok/yandex-metrics/metrics/internal/port/http/public"
+	toolkitlogger "github.com/parta4ok/yandex-metrics/toolkit/logger"
+	"github.com/parta4ok/yandex-metrics/toolkit/logger/baseslog"
 )
 
 type Application struct {
@@ -23,24 +25,30 @@ type Application struct {
 	service       port.MetricServiceProvider
 	publicServer  StartStopper
 	startStoppers []StartStopper
+	logger        toolkitlogger.Logger
 }
 
 func New(configPath string, overrides Overrides) (*Application, error) {
-	config, err := config.NewConfig(configPath)
+	logger := baseslog.New()
+	config, err := config.NewConfig(configPath, logger)
 	if err != nil {
 		return nil, errors.Wrap(err, "new application. load config")
 	}
 
-	return newApplication(resolveConfig(config, overrides))
+	return newApplication(resolveConfig(config, overrides), logger)
 }
 
-func newApplication(config ConfigProvider) (*Application, error) {
+func newApplication(config ConfigProvider, logger toolkitlogger.Logger) (*Application, error) {
 	if config == nil {
 		return nil, errors.Wrap(entities.ErrInvalidParam, "new application. config is nil")
+	}
+	if logger == nil {
+		return nil, errors.Wrap(entities.ErrInvalidParam, "new application. logger is nil")
 	}
 
 	return &Application{
 		ConfigProvider: config,
+		logger:         logger,
 	}, nil
 }
 
@@ -73,11 +81,11 @@ func (app *Application) build() error {
 }
 
 func (app *Application) buildStorage() {
-	app.storage = inmemory.NewStorage()
+	app.storage = inmemory.NewStorage(app.logger)
 }
 
 func (app *Application) buildService() error {
-	service, err := cases.NewMetricsService(app.storage)
+	service, err := cases.NewMetricsService(app.storage, app.logger)
 	if err != nil {
 		return errors.Wrap(err, "build metrics service")
 	}
@@ -99,7 +107,7 @@ func (app *Application) buildServer() error {
 		)
 	}
 
-	server, err := public.NewServer(app.ConfigProvider, app.service, options...)
+	server, err := public.NewServer(app.ConfigProvider, app.service, app.logger, options...)
 	if err != nil {
 		return errors.Wrap(err, "build public HTTP server")
 	}

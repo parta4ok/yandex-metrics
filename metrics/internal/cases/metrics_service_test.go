@@ -7,6 +7,7 @@ import (
 	"github.com/parta4ok/yandex-metrics/metrics/internal/cases"
 	"github.com/parta4ok/yandex-metrics/metrics/internal/cases/testdata"
 	"github.com/parta4ok/yandex-metrics/metrics/internal/entities"
+	"github.com/parta4ok/yandex-metrics/toolkit/logger/noop"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
@@ -41,7 +42,7 @@ func TestNewMetricsService(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			storage := tt.newStorage(ctrl)
 
-			service, err := cases.NewMetricsService(storage)
+			service, err := cases.NewMetricsService(storage, noop.New())
 
 			if tt.wantErr != nil {
 				require.ErrorIs(t, err, tt.wantErr)
@@ -53,6 +54,16 @@ func TestNewMetricsService(t *testing.T) {
 			require.NotNil(t, service)
 		})
 	}
+}
+
+func TestNewMetricsService_NilLogger(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	service, err := cases.NewMetricsService(testdata.NewMockMetricsStorage(ctrl), nil)
+
+	require.ErrorIs(t, err, entities.ErrInvalidParam)
+	require.Nil(t, service)
 }
 
 func TestMetricsService_UpdateMetric(t *testing.T) {
@@ -95,7 +106,7 @@ func TestMetricsService_UpdateMetric(t *testing.T) {
 
 			ctrl := gomock.NewController(t)
 			storage := testdata.NewMockMetricsStorage(ctrl)
-			service, err := cases.NewMetricsService(storage)
+			service, err := cases.NewMetricsService(storage, noop.New())
 			require.NoError(t, err)
 
 			if tt.setupStorage != nil {
@@ -164,7 +175,7 @@ func TestMetricsService_GetMetric(t *testing.T) {
 
 			ctrl := gomock.NewController(t)
 			storage := testdata.NewMockMetricsStorage(ctrl)
-			service, err := cases.NewMetricsService(storage)
+			service, err := cases.NewMetricsService(storage, noop.New())
 			require.NoError(t, err)
 
 			if tt.setupStorage != nil {
@@ -218,7 +229,7 @@ func TestMetricsService_ListMetrics(t *testing.T) {
 
 			ctrl := gomock.NewController(t)
 			storage := testdata.NewMockMetricsStorage(ctrl)
-			service, err := cases.NewMetricsService(storage)
+			service, err := cases.NewMetricsService(storage, noop.New())
 			require.NoError(t, err)
 
 			tt.setupStorage(storage)

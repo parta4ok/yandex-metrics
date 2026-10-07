@@ -2,23 +2,25 @@ package cases
 
 import (
 	"context"
-	"log/slog"
 
 	"github.com/pkg/errors"
 
 	"github.com/parta4ok/yandex-metrics/agent/internal/entities"
+	toolkitlogger "github.com/parta4ok/yandex-metrics/toolkit/logger"
 )
 
 type AgentService struct {
 	metricServiceClient MetricServiceClient
 	dataProvider        DataProvider
 	storage             Storage
+	logger              toolkitlogger.Logger
 }
 
 func NewAgentService(
 	metricServiceClient MetricServiceClient,
 	dataProvider DataProvider,
 	storage Storage,
+	logger toolkitlogger.Logger,
 ) (*AgentService, error) {
 	if metricServiceClient == nil {
 		return nil, errors.Wrap(entities.ErrInvalidParam, "new agent service. metric service client is nil")
@@ -29,11 +31,15 @@ func NewAgentService(
 	if storage == nil {
 		return nil, errors.Wrap(entities.ErrInvalidParam, "new agent service. storage is nil")
 	}
+	if logger == nil {
+		return nil, errors.Wrap(entities.ErrInvalidParam, "new agent service. logger is nil")
+	}
 
 	return &AgentService{
 		metricServiceClient: metricServiceClient,
 		dataProvider:        dataProvider,
 		storage:             storage,
+		logger:              logger,
 	}, nil
 }
 
@@ -96,7 +102,7 @@ func (s *AgentService) sendMetrics(ctx context.Context, metrics *entities.Metric
 
 	for _, metric := range metricList {
 		if err := s.metricServiceClient.UpdateAgentData(ctx, metric); err != nil {
-			slog.Info(
+			s.logger.Warn(
 				"send metrics. update metric failed",
 				"metric", metric.Name(),
 				"error", err,

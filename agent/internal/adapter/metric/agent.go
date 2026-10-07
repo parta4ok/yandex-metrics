@@ -9,14 +9,19 @@ import (
 
 	"github.com/parta4ok/yandex-metrics/agent/internal/cases"
 	"github.com/parta4ok/yandex-metrics/agent/internal/entities"
+	toolkitlogger "github.com/parta4ok/yandex-metrics/toolkit/logger"
 )
 
 var _ cases.DataProvider = (*Agent)(nil)
 
-type Agent struct{}
+type Agent struct {
+	logger toolkitlogger.Logger
+}
 
-func NewAgent() *Agent {
-	return &Agent{}
+func NewAgent(logger toolkitlogger.Logger) *Agent {
+	return &Agent{
+		logger: logger,
+	}
 }
 
 func (a *Agent) GetActualAgentData(ctx context.Context) (*entities.Metrics, error) {

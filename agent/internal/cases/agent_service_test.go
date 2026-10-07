@@ -7,6 +7,7 @@ import (
 	"github.com/parta4ok/yandex-metrics/agent/internal/cases"
 	"github.com/parta4ok/yandex-metrics/agent/internal/cases/testdata"
 	"github.com/parta4ok/yandex-metrics/agent/internal/entities"
+	"github.com/parta4ok/yandex-metrics/toolkit/logger/noop"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
@@ -45,7 +46,7 @@ func TestNewAgentService(t *testing.T) {
 				storage = testdata.NewMockStorage(ctrl)
 			}
 
-			service, err := cases.NewAgentService(client, provider, storage)
+			service, err := cases.NewAgentService(client, provider, storage, noop.New())
 			if tt.wantErr != nil {
 				require.ErrorIs(t, err, tt.wantErr)
 				require.Nil(t, service)
@@ -56,6 +57,21 @@ func TestNewAgentService(t *testing.T) {
 			require.NotNil(t, service)
 		})
 	}
+}
+
+func TestNewAgentService_NilLogger(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	service, err := cases.NewAgentService(
+		testdata.NewMockMetricServiceClient(ctrl),
+		testdata.NewMockDataProvider(ctrl),
+		testdata.NewMockStorage(ctrl),
+		nil,
+	)
+
+	require.ErrorIs(t, err, entities.ErrInvalidParam)
+	require.Nil(t, service)
 }
 
 func TestAgentService_UpdateMetrics(t *testing.T) {
@@ -233,7 +249,7 @@ func newService(t *testing.T) (
 	client := testdata.NewMockMetricServiceClient(ctrl)
 	provider := testdata.NewMockDataProvider(ctrl)
 	storage := testdata.NewMockStorage(ctrl)
-	service, err := cases.NewAgentService(client, provider, storage)
+	service, err := cases.NewAgentService(client, provider, storage, noop.New())
 	require.NoError(t, err)
 
 	return service, client, provider, storage

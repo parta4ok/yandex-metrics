@@ -7,13 +7,14 @@ import (
 
 	"github.com/parta4ok/yandex-metrics/metrics/internal/adapter/storage/inmemory"
 	"github.com/parta4ok/yandex-metrics/metrics/internal/entities"
+	"github.com/parta4ok/yandex-metrics/toolkit/logger/noop"
 	"github.com/stretchr/testify/require"
 )
 
 func TestStorage_UpdateMetric(t *testing.T) {
 	t.Parallel()
 
-	storage := inmemory.NewStorage()
+	storage := inmemory.NewStorage(noop.New())
 	counter := newCounter(t, "requests", 2)
 	require.NoError(t, storage.UpdateMetric(context.Background(), counter))
 	require.NoError(t, storage.UpdateMetric(context.Background(), newCounter(t, "requests", 3)))
@@ -31,14 +32,14 @@ func TestStorage_UpdateMetric_CancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := inmemory.NewStorage().UpdateMetric(ctx, newCounter(t, "requests", 1))
+	err := inmemory.NewStorage(noop.New()).UpdateMetric(ctx, newCounter(t, "requests", 1))
 	require.ErrorIs(t, err, context.Canceled)
 }
 
 func TestStorage_GetMetricAndListMetrics(t *testing.T) {
 	t.Parallel()
 
-	storage := inmemory.NewStorage()
+	storage := inmemory.NewStorage(noop.New())
 	require.NoError(t, storage.UpdateMetric(context.Background(), newCounter(t, "requests", 2)))
 	require.NoError(t, storage.UpdateMetric(context.Background(), newCounter(t, "requests", 3)))
 	require.NoError(t, storage.UpdateMetric(context.Background(), newGauge(t, "memory", 1.5)))
@@ -72,7 +73,7 @@ func TestStorage_ReadCancelledContext(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	storage := inmemory.NewStorage()
+	storage := inmemory.NewStorage(noop.New())
 
 	_, err := storage.GetMetric(ctx, "requests", entities.Counter)
 	require.ErrorIs(t, err, context.Canceled)
@@ -83,7 +84,7 @@ func TestStorage_ReadCancelledContext(t *testing.T) {
 func TestStorage_ReadEmptyAndSameNameDifferentTypes(t *testing.T) {
 	t.Parallel()
 
-	storage := inmemory.NewStorage()
+	storage := inmemory.NewStorage(noop.New())
 	metrics, err := storage.ListMetrics(context.Background())
 	require.NoError(t, err)
 	require.Empty(t, metrics)
@@ -105,7 +106,7 @@ func TestStorage_AccumulatesCounterConcurrently(t *testing.T) {
 
 	const updates = 100
 
-	storage := inmemory.NewStorage()
+	storage := inmemory.NewStorage(noop.New())
 	updatesToStore := make([]*entities.Metric, updates)
 	for index := range updatesToStore {
 		updatesToStore[index] = newCounter(t, "requests", 1)

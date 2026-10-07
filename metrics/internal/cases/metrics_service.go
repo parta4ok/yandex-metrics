@@ -6,19 +6,25 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/parta4ok/yandex-metrics/metrics/internal/entities"
+	toolkitlogger "github.com/parta4ok/yandex-metrics/toolkit/logger"
 )
 
 type MetricsService struct {
 	storage MetricsStorage
+	logger  toolkitlogger.Logger
 }
 
-func NewMetricsService(storage MetricsStorage) (*MetricsService, error) {
+func NewMetricsService(storage MetricsStorage, logger toolkitlogger.Logger) (*MetricsService, error) {
 	if storage == nil {
 		return nil, errors.Wrap(entities.ErrInvalidParam, "new metrics service. storage is nil")
+	}
+	if logger == nil {
+		return nil, errors.Wrap(entities.ErrInvalidParam, "new metrics service. logger is nil")
 	}
 
 	return &MetricsService{
 		storage: storage,
+		logger:  logger,
 	}, nil
 }
 

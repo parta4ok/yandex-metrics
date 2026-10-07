@@ -10,6 +10,7 @@ import (
 
 	adapter "github.com/parta4ok/yandex-metrics/agent/internal/adapter/metrics"
 	"github.com/parta4ok/yandex-metrics/agent/internal/entities"
+	"github.com/parta4ok/yandex-metrics/toolkit/logger/noop"
 	"github.com/stretchr/testify/require"
 )
 
@@ -34,7 +35,7 @@ func TestNewClient(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			client, err := adapter.NewClient(tt.address, tt.client)
+			client, err := adapter.NewClient(tt.address, tt.client, noop.New())
 			if tt.wantError != nil {
 				require.ErrorIs(t, err, tt.wantError)
 				require.Nil(t, client)
@@ -90,7 +91,7 @@ func TestClient_UpdateAgentData(t *testing.T) {
 						Header:     make(http.Header),
 					}, nil
 				}),
-			})
+			}, noop.New())
 			require.NoError(t, err)
 
 			err = client.UpdateAgentData(context.Background(), tt.metric)

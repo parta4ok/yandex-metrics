@@ -9,6 +9,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/parta4ok/yandex-metrics/agent/internal/entities"
+	toolkitlogger "github.com/parta4ok/yandex-metrics/toolkit/logger"
 )
 
 const (
@@ -21,11 +22,15 @@ const (
 
 type Config struct {
 	*koanf.Koanf
+	logger toolkitlogger.Logger
 }
 
-func NewConfig(filePath string) (*Config, error) {
+func NewConfig(filePath string, logger toolkitlogger.Logger) (*Config, error) {
 	if filePath == "" {
 		return nil, errors.Wrap(entities.ErrInvalidParam, "new config. file path is empty")
+	}
+	if logger == nil {
+		return nil, errors.Wrap(entities.ErrInvalidParam, "new config. logger is nil")
 	}
 
 	config := koanf.New(".")
@@ -34,7 +39,8 @@ func NewConfig(filePath string) (*Config, error) {
 	}
 
 	return &Config{
-		Koanf: config,
+		Koanf:  config,
+		logger: logger,
 	}, nil
 }
 

@@ -6,13 +6,14 @@ import (
 
 	"github.com/parta4ok/yandex-metrics/agent/internal/adapter/storage/inmemory"
 	"github.com/parta4ok/yandex-metrics/agent/internal/entities"
+	"github.com/parta4ok/yandex-metrics/toolkit/logger/noop"
 	"github.com/stretchr/testify/require"
 )
 
 func TestStorage(t *testing.T) {
 	t.Parallel()
 
-	storage := inmemory.NewStorage()
+	storage := inmemory.NewStorage(noop.New())
 	_, err := storage.GetAgentData(context.Background())
 	require.ErrorIs(t, err, entities.ErrNotFound)
 
@@ -42,7 +43,7 @@ func TestStorage_CancelledContext(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	storage := inmemory.NewStorage()
+	storage := inmemory.NewStorage(noop.New())
 
 	_, err := storage.GetAgentData(ctx)
 	require.ErrorIs(t, err, context.Canceled)
@@ -54,7 +55,7 @@ func TestStorage_CancelledContext(t *testing.T) {
 func TestStorage_AcknowledgeCounter(t *testing.T) {
 	t.Parallel()
 
-	storage := inmemory.NewStorage()
+	storage := inmemory.NewStorage(noop.New())
 	metrics := entities.NewMetrics()
 	require.NoError(t, storage.UpdateGauges(context.Background(), metrics))
 	require.NoError(t, storage.IncrementCounter(context.Background(), entities.PollCount, 5))
@@ -83,7 +84,7 @@ func TestStorage_AcknowledgeCounter(t *testing.T) {
 	)
 	require.ErrorIs(
 		t,
-		inmemory.NewStorage().AcknowledgeCounter(context.Background(), entities.PollCount, 1),
+		inmemory.NewStorage(noop.New()).AcknowledgeCounter(context.Background(), entities.PollCount, 1),
 		entities.ErrNotFound,
 	)
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/parta4ok/yandex-metrics/metrics/internal/entities"
 	"github.com/parta4ok/yandex-metrics/metrics/internal/port/http/public"
 	"github.com/parta4ok/yandex-metrics/metrics/internal/port/testdata"
+	"github.com/parta4ok/yandex-metrics/toolkit/logger/noop"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
@@ -23,7 +24,7 @@ func Test_ServerUpdateMetric_Success(t *testing.T) {
 	service := testdata.NewMockMetricServiceProvider(ctrl)
 	testaddress := ":8080"
 
-	server, err := public.NewServer(serverConfig(testaddress), service)
+	server, err := public.NewServer(serverConfig(testaddress), service, noop.New())
 	require.NoError(t, err)
 	require.NotNil(t, server)
 
@@ -333,7 +334,7 @@ func newTestServer(t *testing.T) (*public.Server, *testdata.MockMetricServicePro
 	t.Cleanup(ctrl.Finish)
 
 	service := testdata.NewMockMetricServiceProvider(ctrl)
-	server, err := public.NewServer(serverConfig(":8080"), service)
+	server, err := public.NewServer(serverConfig(":8080"), service, noop.New())
 	require.NoError(t, err)
 
 	return server, service

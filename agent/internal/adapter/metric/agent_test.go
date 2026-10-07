@@ -6,13 +6,14 @@ import (
 
 	"github.com/parta4ok/yandex-metrics/agent/internal/adapter/metric"
 	"github.com/parta4ok/yandex-metrics/agent/internal/entities"
+	"github.com/parta4ok/yandex-metrics/toolkit/logger/noop"
 	"github.com/stretchr/testify/require"
 )
 
 func TestAgent_GetActualAgentData(t *testing.T) {
 	t.Parallel()
 
-	agent := metric.NewAgent()
+	agent := metric.NewAgent(noop.New())
 	metrics, err := agent.GetActualAgentData(context.Background())
 	require.NoError(t, err)
 
@@ -38,7 +39,7 @@ func TestAgent_GetActualAgentData_CancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	metrics, err := metric.NewAgent().GetActualAgentData(ctx)
+	metrics, err := metric.NewAgent(noop.New()).GetActualAgentData(ctx)
 	require.ErrorIs(t, err, context.Canceled)
 	require.Nil(t, metrics)
 }

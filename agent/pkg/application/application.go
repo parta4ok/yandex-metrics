@@ -16,6 +16,8 @@ import (
 	"github.com/parta4ok/yandex-metrics/agent/internal/adapter/storage/inmemory"
 	"github.com/parta4ok/yandex-metrics/agent/internal/cases"
 	"github.com/parta4ok/yandex-metrics/agent/internal/entities"
+	toolkitlogger "github.com/parta4ok/yandex-metrics/toolkit/logger"
+	"github.com/parta4ok/yandex-metrics/toolkit/logger/baseslog"
 )
 
 type Application struct {
@@ -25,24 +27,30 @@ type Application struct {
 	metricServiceClient cases.MetricServiceClient
 	service             AgentServiceProvider
 	startStoppers       []StartStopper
+	logger              toolkitlogger.Logger
 }
 
 func New(configPath string, overrides Overrides) (*Application, error) {
-	config, err := config.NewConfig(configPath)
+	logger := baseslog.New()
+	config, err := config.NewConfig(configPath, logger)
 	if err != nil {
 		return nil, errors.Wrap(err, "new application. load config")
 	}
 
-	return newApplication(resolveConfig(config, overrides))
+	return newApplication(resolveConfig(config, overrides), logger)
 }
 
-func newApplication(config ConfigProvider) (*Application, error) {
+func newApplication(config ConfigProvider, logger toolkitlogger.Logger) (*Application, error) {
 	if config == nil {
 		return nil, errors.Wrap(entities.ErrInvalidParam, "new application. config is nil")
+	}
+	if logger == nil {
+		return nil, errors.Wrap(entities.ErrInvalidParam, "new application. logger is nil")
 	}
 
 	return &Application{
 		ConfigProvider: config,
+		logger:         logger,
 	}, nil
 }
 
@@ -79,11 +87,11 @@ func (app *Application) build() error {
 }
 
 func (app *Application) buildStorage() {
-	app.storage = inmemory.NewStorage()
+	app.storage = inmemory.NewStorage(app.logger)
 }
 
 func (app *Application) buildDataProvider() {
-	app.dataProvider = metricprovider.NewAgent()
+	app.dataProvider = metricprovider.NewAgent(app.logger)
 }
 
 func (app *Application) buildMetricServiceClient() error {
@@ -92,6 +100,7 @@ func (app *Application) buildMetricServiceClient() error {
 		&http.Client{
 			Timeout: app.MetricsHTTPTimeout(),
 		},
+		app.logger,
 	)
 	if err != nil {
 		return errors.Wrap(err, "build metrics service client. create client")
@@ -107,6 +116,7 @@ func (app *Application) buildService() error {
 		app.metricServiceClient,
 		app.dataProvider,
 		app.storage,
+		app.logger,
 	)
 	if err != nil {
 		return errors.Wrap(err, "build agent service. create service")
