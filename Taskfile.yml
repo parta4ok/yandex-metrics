@@ -1,0 +1,65 @@
+version: "3"
+
+tasks:
+  mocks_update:
+    desc: Regenerate GoMock mocks
+    cmds:
+      - go generate ./...
+
+  test_l0:
+    desc: Run unit tests
+    cmds:
+      - go test -short ./...
+
+  reviews_update:
+    desc: Save GitHub review comments to ignored REVIEWS.md
+    requires:
+      vars: [PR]
+    cmds:
+      - |
+        temp_dir="$(mktemp -d)"
+        trap 'rm -rf "$temp_dir"' EXIT
+
+        gh api 'repos/parta4ok/yandex-metrics/pulls/{{.PR}}/reviews' \
+          --paginate > "$temp_dir/reviews.json"
+        gh api 'repos/parta4ok/yandex-metrics/pulls/{{.PR}}/comments' \
+          --paginate > "$temp_dir/inline-comments.json"
+        gh api 'repos/parta4ok/yandex-metrics/issues/{{.PR}}/comments' \
+          --paginate > "$temp_dir/general-comments.json"
+
+        {
+          printf '# Pull request #%s comments\n\n' '{{.PR}}'
+          printf 'Generated from GitHub API on %s.\n\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+
+          jq -rs '
+            [.[0][] | select(.body != "") | {
+              kind: "review summary",
+              author: .user.login,
+              created_at: .submitted_at,
+              location: .state,
+              body,
+              url: .html_url
+            }] +
+            [.[1][] | {
+              kind: "inline comment",
+              author: .user.login,
+              created_at,
+              location: "\(.path):\(.line // .original_line // 0)",
+              body,
+              url: .html_url
+            }] +
+            [.[2][] | {
+              kind: "general comment",
+              author: .user.login,
+              created_at,
+              location: "",
+              body,
+              url: .html_url
+            }] |
+            to_entries[] |
+            "## \(.key + 1). \(.value.kind) — \(.value.location) \(.value.author) (\(.value.created_at))\n\n\(.value.body)\n\n[Open on GitHub](\(.value.url))\n"
+          ' \
+            "$temp_dir/reviews.json" \
+            "$temp_dir/inline-comments.json" \
+            "$temp_dir/general-comments.json"
+        } > REVIEWS.md

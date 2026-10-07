@@ -1,0 +1,10 @@
+metrics:
+  application:
+    graceful_shutdown_timeout: 5s
+  http:
+    public:
+      address: "localhost:8080"
+      tls:
+        enabled: false
+        certificate_file: ""
+        key_file: ""
