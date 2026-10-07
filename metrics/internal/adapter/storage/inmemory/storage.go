@@ -21,17 +21,17 @@ type metricKey struct {
 }
 
 type Storage struct {
-	mu      sync.RWMutex
-	metrics map[metricKey]*entities.Metrics
+	mu      sync.Mutex
+	metrics map[metricKey]*entities.Metric
 }
 
 func NewStorage() *Storage {
 	return &Storage{
-		metrics: make(map[metricKey]*entities.Metrics),
+		metrics: make(map[metricKey]*entities.Metric),
 	}
 }
 
-func (s *Storage) UpdateMetric(ctx context.Context, metric *entities.Metrics) error {
+func (s *Storage) UpdateMetric(ctx context.Context, metric *entities.Metric) error {
 	if err := validateContext(ctx); err != nil {
 		return errors.Wrap(err, "update metric. context")
 	}
@@ -67,13 +67,13 @@ func (s *Storage) GetMetric(
 	ctx context.Context,
 	id string,
 	mType entities.MType,
-) (*entities.Metrics, error) {
+) (*entities.Metric, error) {
 	if err := validateContext(ctx); err != nil {
 		return nil, errors.Wrap(err, "get metric. context")
 	}
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	if err := validateContext(ctx); err != nil {
 		return nil, errors.Wrap(err, "get metric. context")
@@ -92,13 +92,13 @@ func (s *Storage) GetMetric(
 	return metricCopy, nil
 }
 
-func (s *Storage) ListMetrics(ctx context.Context) ([]*entities.Metrics, error) {
+func (s *Storage) ListMetrics(ctx context.Context) ([]*entities.Metric, error) {
 	if err := validateContext(ctx); err != nil {
 		return nil, errors.Wrap(err, "list metrics. context")
 	}
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	if err := validateContext(ctx); err != nil {
 		return nil, errors.Wrap(err, "list metrics. context")
@@ -116,7 +116,7 @@ func (s *Storage) ListMetrics(ctx context.Context) ([]*entities.Metrics, error) 
 		return keys[i].id < keys[j].id
 	})
 
-	metrics := make([]*entities.Metrics, 0, len(keys))
+	metrics := make([]*entities.Metric, 0, len(keys))
 	for _, key := range keys {
 		metricCopy, err := cloneMetric(s.metrics[key])
 		if err != nil {
@@ -129,7 +129,7 @@ func (s *Storage) ListMetrics(ctx context.Context) ([]*entities.Metrics, error) 
 	return metrics, nil
 }
 
-func (s *Storage) processCounter(metric *entities.Metrics) error {
+func (s *Storage) processCounter(metric *entities.Metric) error {
 	key := metricKey{
 		id:    metric.ID(),
 		mType: metric.MType(),
@@ -156,8 +156,8 @@ func validateContext(ctx context.Context) error {
 	return nil
 }
 
-func cloneMetric(metric *entities.Metrics) (*entities.Metrics, error) {
-	metricCopy, err := entities.NewMetrics(metric.ID(), metric.MType())
+func cloneMetric(metric *entities.Metric) (*entities.Metric, error) {
+	metricCopy, err := entities.NewMetric(metric.ID(), metric.MType())
 	if err != nil {
 		return nil, errors.Wrap(err, "clone metric. create metric")
 	}

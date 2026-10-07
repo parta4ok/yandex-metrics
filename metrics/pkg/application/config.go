@@ -1,11 +1,13 @@
 package application
 
-import "time"
+import toolkitconfig "github.com/parta4ok/yandex-metrics/toolkit/config"
+
+type PublicHTTPServerConfig interface {
+	toolkitconfig.HTTPServerConfig
+	toolkitconfig.TLSConfig
+}
 
 type ConfigProvider interface {
-	GetGracefulShutdownTimeout() time.Duration
-	GetPublicHTTPAddr() string
-	IsPublicHTTPTLSEnabled() bool
-	GetPublicHTTPTLSCertificateFile() string
-	GetPublicHTTPTLSKeyFile() string
+	toolkitconfig.GracefulStopConfig
+	PublicHTTPServerConfig
 }

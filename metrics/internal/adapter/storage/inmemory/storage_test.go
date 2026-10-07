@@ -106,7 +106,7 @@ func TestStorage_AccumulatesCounterConcurrently(t *testing.T) {
 	const updates = 100
 
 	storage := inmemory.NewStorage()
-	updatesToStore := make([]*entities.Metrics, updates)
+	updatesToStore := make([]*entities.Metric, updates)
 	for index := range updatesToStore {
 		updatesToStore[index] = newCounter(t, "requests", 1)
 	}
@@ -130,19 +130,19 @@ func TestStorage_AccumulatesCounterConcurrently(t *testing.T) {
 	require.Equal(t, int64(updates), *metric.Delta())
 }
 
-func newCounter(t *testing.T, id string, delta int64) *entities.Metrics {
+func newCounter(t *testing.T, id string, delta int64) *entities.Metric {
 	t.Helper()
 
-	metric, err := entities.NewMetrics(id, entities.Counter)
+	metric, err := entities.NewMetric(id, entities.Counter)
 	require.NoError(t, err)
 	metric.SetDelta(&delta)
 	return metric
 }
 
-func newGauge(t *testing.T, id string, value float64) *entities.Metrics {
+func newGauge(t *testing.T, id string, value float64) *entities.Metric {
 	t.Helper()
 
-	metric, err := entities.NewMetrics(id, entities.Gauge)
+	metric, err := entities.NewMetric(id, entities.Gauge)
 	require.NoError(t, err)
 	metric.SetValue(&value)
 	return metric

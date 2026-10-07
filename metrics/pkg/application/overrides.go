@@ -10,7 +10,7 @@ type resolvedConfig struct {
 }
 
 func resolveConfig(config ConfigProvider, overrides Overrides) ConfigProvider {
-	address := config.GetPublicHTTPAddr()
+	address := config.HTTPAddress()
 	if overrides.PublicHTTPAddress != nil {
 		address = *overrides.PublicHTTPAddress
 	}
@@ -21,6 +21,6 @@ func resolveConfig(config ConfigProvider, overrides Overrides) ConfigProvider {
 	}
 }
 
-func (c resolvedConfig) GetPublicHTTPAddr() string {
+func (c resolvedConfig) HTTPAddress() string {
 	return c.publicHTTPAddress
 }

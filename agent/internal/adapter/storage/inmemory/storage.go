@@ -13,7 +13,7 @@ import (
 var _ cases.Storage = (*Storage)(nil)
 
 type Storage struct {
-	mu      sync.RWMutex
+	mu      sync.Mutex
 	metrics map[entities.MName]*entities.Metric
 }
 
@@ -28,8 +28,8 @@ func (s *Storage) GetAgentData(ctx context.Context) (*entities.Metrics, error) {
 		return nil, errors.Wrap(err, "get agent data. context")
 	}
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	if err := validateContext(ctx); err != nil {
 		return nil, errors.Wrap(err, "get agent data. context")
@@ -46,26 +46,102 @@ func (s *Storage) GetAgentData(ctx context.Context) (*entities.Metrics, error) {
 	return metrics, nil
 }
 
-func (s *Storage) SaveAgentData(ctx context.Context, metrics *entities.Metrics) error {
+func (s *Storage) UpdateGauges(ctx context.Context, metrics *entities.Metrics) error {
 	if err := validateContext(ctx); err != nil {
-		return errors.Wrap(err, "save agent data. context")
+		return errors.Wrap(err, "update gauges. context")
 	}
 
 	metricMap, err := newMetricMap(metrics)
 	if err != nil {
-		return errors.Wrap(err, "save agent data. create metric map")
+		return errors.Wrap(err, "update gauges. create metric map")
+	}
+	for _, metric := range metricMap {
+		if metric.MType() != entities.Gauge {
+			return errors.Wrap(entities.ErrInvalidParam, "update gauges. metric type is not gauge")
+		}
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if err := validateContext(ctx); err != nil {
-		return errors.Wrap(err, "save agent data. context")
+		return errors.Wrap(err, "update gauges. context")
 	}
 
-	s.metrics = metricMap
+	for name, metric := range metricMap {
+		s.metrics[name] = metric
+	}
 
 	return nil
+}
+
+func (s *Storage) IncrementCounter(
+	ctx context.Context,
+	name entities.MName,
+	delta int64,
+) error {
+	if name.MType() != entities.Counter {
+		return errors.Wrap(entities.ErrInvalidParam, "increment counter. metric type is not counter")
+	}
+	if err := validateContext(ctx); err != nil {
+		return errors.Wrap(err, "increment counter. context")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := validateContext(ctx); err != nil {
+		return errors.Wrap(err, "increment counter. context")
+	}
+
+	metric, ok := s.metrics[name]
+	if !ok {
+		var err error
+		metric, err = entities.NewMetric(name)
+		if err != nil {
+			return errors.Wrap(err, "increment counter. create metric")
+		}
+		s.metrics[name] = metric
+	}
+
+	if err := metric.Increment(delta); err != nil {
+		return errors.Wrap(err, "increment counter. increment metric")
+	}
+
+	return nil
+}
+
+func (s *Storage) AcknowledgeCounter(
+	ctx context.Context,
+	name entities.MName,
+	delta int64,
+) error {
+	if name.MType() != entities.Counter {
+		return errors.Wrap(entities.ErrInvalidParam, "acknowledge counter. metric type is not counter")
+	}
+	if delta < 0 {
+		return errors.Wrap(entities.ErrInvalidParam, "acknowledge counter. delta is negative")
+	}
+	if err := validateContext(ctx); err != nil {
+		return errors.Wrap(err, "acknowledge counter. context")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := validateContext(ctx); err != nil {
+		return errors.Wrap(err, "acknowledge counter. context")
+	}
+
+	metric, ok := s.metrics[name]
+	if !ok {
+		return errors.Wrap(entities.ErrNotFound, "acknowledge counter. metric not found")
+	}
+	if metric.Delta() == nil || *metric.Delta() < delta {
+		return errors.Wrap(entities.ErrInternalError, "acknowledge counter. metric delta is invalid")
+	}
+
+	return metric.Increment(-delta)
 }
 
 func validateContext(ctx context.Context) error {

@@ -30,3 +30,8 @@ vendor/
 AGENTS.md
 SKILLS.md
 INCREMENTS.md
+REVIEWS.md
+
+# Local runtime configuration
+config/agent.yml
+config/metrics.yml

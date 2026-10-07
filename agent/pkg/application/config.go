@@ -1,11 +1,23 @@
 package application
 
-import "time"
+import (
+	"time"
+
+	toolkitconfig "github.com/parta4ok/yandex-metrics/toolkit/config"
+)
+
+type MetricsHTTPClientConfig interface {
+	MetricsHTTPAddress() string
+	MetricsHTTPTimeout() time.Duration
+}
+
+type TickerConfig interface {
+	PollInterval() time.Duration
+	ReportInterval() time.Duration
+}
 
 type ConfigProvider interface {
-	GetGracefulShutdownTimeout() time.Duration
-	GetPollInterval() time.Duration
-	GetReportInterval() time.Duration
-	GetMetricsHTTPAddress() string
-	GetMetricsHTTPTimeout() time.Duration
+	toolkitconfig.GracefulStopConfig
+	MetricsHTTPClientConfig
+	TickerConfig
 }

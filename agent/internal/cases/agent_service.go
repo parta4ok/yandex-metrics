@@ -2,6 +2,7 @@ package cases
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/pkg/errors"
 
@@ -42,21 +43,14 @@ func (s *AgentService) UpdateMetrics(ctx context.Context) error {
 		return errors.Wrap(err, "update metrics. get actual agent data")
 	}
 
-	metrics := entities.NewMetrics()
-	storedMetrics, err := s.storage.GetAgentData(ctx)
-	if err != nil && !errors.Is(err, entities.ErrNotFound) {
-		return errors.Wrap(err, "update metrics. get agent data")
+	if err := s.updateMetrics(actualMetrics); err != nil {
+		return errors.Wrap(err, "update metrics. validate actual data")
 	}
-	if err == nil {
-		metrics = storedMetrics
+	if err := s.storage.UpdateGauges(ctx, actualMetrics); err != nil {
+		return errors.Wrap(err, "update metrics. update gauges")
 	}
-
-	if err := s.updateMetrics(metrics, actualMetrics); err != nil {
-		return errors.Wrap(err, "update metrics. update agent data")
-	}
-
-	if err := s.storage.SaveAgentData(ctx, metrics); err != nil {
-		return errors.Wrap(err, "update metrics. save agent data")
+	if err := s.storage.IncrementCounter(ctx, entities.PollCount, 1); err != nil {
+		return errors.Wrap(err, "update metrics. increment poll count")
 	}
 
 	return nil
@@ -79,7 +73,7 @@ func (s *AgentService) SendMetrics(ctx context.Context) error {
 	return nil
 }
 
-func (s *AgentService) updateMetrics(metrics *entities.Metrics, actualMetrics *entities.Metrics) error {
+func (s *AgentService) updateMetrics(actualMetrics *entities.Metrics) error {
 	actualMetricList, err := actualMetrics.All()
 	if err != nil {
 		return errors.Wrap(err, "update metrics. list actual metrics")
@@ -89,13 +83,6 @@ func (s *AgentService) updateMetrics(metrics *entities.Metrics, actualMetrics *e
 		if actualMetric.MType() != entities.Gauge {
 			return errors.Wrap(entities.ErrInvalidParam, "update metrics. actual metric type is not gauge")
 		}
-		if err := metrics.UpdateGauge(actualMetric.Name(), *actualMetric.Value()); err != nil {
-			return errors.Wrap(err, "update metrics. update gauge")
-		}
-	}
-
-	if err := metrics.IncrementCounter(entities.PollCount, 1); err != nil {
-		return errors.Wrap(err, "update metrics. increment poll count")
 	}
 
 	return nil
@@ -108,7 +95,21 @@ func (s *AgentService) sendMetrics(ctx context.Context, metrics *entities.Metric
 	}
 
 	for _, metric := range metricList {
-		_ = s.metricServiceClient.UpdateAgentData(ctx, metric)
+		if err := s.metricServiceClient.UpdateAgentData(ctx, metric); err != nil {
+			slog.Info(
+				"send metrics. update metric failed",
+				"metric", metric.Name(),
+				"error", err,
+			)
+			continue
+		}
+
+		if metric.MType() != entities.Counter {
+			continue
+		}
+		if err := s.storage.AcknowledgeCounter(ctx, metric.Name(), *metric.Delta()); err != nil {
+			return errors.Wrap(err, "send metrics. acknowledge counter")
+		}
 	}
 
 	return nil

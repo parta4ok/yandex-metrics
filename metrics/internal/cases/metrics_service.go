@@ -22,7 +22,7 @@ func NewMetricsService(storage MetricsStorage) (*MetricsService, error) {
 	}, nil
 }
 
-func (s *MetricsService) UpdateMetric(ctx context.Context, metric *entities.Metrics) error {
+func (s *MetricsService) UpdateMetric(ctx context.Context, metric *entities.Metric) error {
 	if err := metric.Validate(); err != nil {
 		return errors.Wrap(err, "update metric. validate metric")
 	}
@@ -38,7 +38,7 @@ func (s *MetricsService) GetMetric(
 	ctx context.Context,
 	id string,
 	mType entities.MType,
-) (*entities.Metrics, error) {
+) (*entities.Metric, error) {
 	if id == "" || !mType.IsValid() {
 		return nil, errors.Wrap(entities.ErrInvalidParam, "get metric. required parameters are invalid")
 	}
@@ -51,7 +51,7 @@ func (s *MetricsService) GetMetric(
 	return metric, nil
 }
 
-func (s *MetricsService) ListMetrics(ctx context.Context) ([]*entities.Metrics, error) {
+func (s *MetricsService) ListMetrics(ctx context.Context) ([]*entities.Metric, error) {
 	metrics, err := s.storage.ListMetrics(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "list metrics. list storage")

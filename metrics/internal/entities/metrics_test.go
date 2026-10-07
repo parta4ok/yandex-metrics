@@ -48,7 +48,7 @@ func TestNewMetrics(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			metric, err := entities.NewMetrics(tt.id, tt.mType)
+			metric, err := entities.NewMetric(tt.id, tt.mType)
 
 			if tt.wantErr != nil {
 				require.ErrorIs(t, err, tt.wantErr)
@@ -66,7 +66,7 @@ func TestNewMetrics(t *testing.T) {
 func TestMetrics_OptionalFields(t *testing.T) {
 	t.Parallel()
 
-	metric, err := entities.NewMetrics("metric", entities.Counter)
+	metric, err := entities.NewMetric("metric", entities.Counter)
 	require.NoError(t, err)
 
 	delta := int64(42)
@@ -85,29 +85,29 @@ func TestMetrics_OptionalFields(t *testing.T) {
 func TestMetrics_Validate(t *testing.T) {
 	t.Parallel()
 
-	counter, err := entities.NewMetrics("requests", entities.Counter)
+	counter, err := entities.NewMetric("requests", entities.Counter)
 	require.NoError(t, err)
 
-	gauge, err := entities.NewMetrics("memory", entities.Gauge)
+	gauge, err := entities.NewMetric("memory", entities.Gauge)
 	require.NoError(t, err)
 
 	counterDelta := int64(1)
-	validCounter, err := entities.NewMetrics("requests", entities.Counter)
+	validCounter, err := entities.NewMetric("requests", entities.Counter)
 	require.NoError(t, err)
 	validCounter.SetDelta(&counterDelta)
 
 	gaugeValue := 1.5
-	validGauge, err := entities.NewMetrics("memory", entities.Gauge)
+	validGauge, err := entities.NewMetric("memory", entities.Gauge)
 	require.NoError(t, err)
 	validGauge.SetValue(&gaugeValue)
 
 	tests := []struct {
 		name    string
-		metric  *entities.Metrics
+		metric  *entities.Metric
 		wantErr error
 	}{
 		{name: "nil metric", wantErr: entities.ErrInvalidParam},
-		{name: "empty metric", metric: &entities.Metrics{}, wantErr: entities.ErrInvalidParam},
+		{name: "empty metric", metric: &entities.Metric{}, wantErr: entities.ErrInvalidParam},
 		{name: "counter without delta", metric: counter, wantErr: entities.ErrInvalidParam},
 		{name: "gauge without value", metric: gauge, wantErr: entities.ErrInvalidParam},
 		{name: "valid counter", metric: validCounter},

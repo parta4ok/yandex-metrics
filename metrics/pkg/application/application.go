@@ -89,17 +89,17 @@ func (app *Application) buildService() error {
 
 func (app *Application) buildServer() error {
 	var options []public.Option
-	if app.IsPublicHTTPTLSEnabled() {
+	if app.TLSEnabled() {
 		options = append(
 			options,
 			public.WithTLS(
-				app.GetPublicHTTPTLSCertificateFile(),
-				app.GetPublicHTTPTLSKeyFile(),
+				app.TLSCertificateFile(),
+				app.TLSKeyFile(),
 			),
 		)
 	}
 
-	server, err := public.NewServer(app.GetPublicHTTPAddr(), app.service, options...)
+	server, err := public.NewServer(app.ConfigProvider, app.service, options...)
 	if err != nil {
 		return errors.Wrap(err, "build public HTTP server")
 	}
@@ -139,7 +139,7 @@ func (app *Application) runStartStoppers(ctx context.Context) error {
 }
 
 func (app *Application) stopStartStoppers() error {
-	ctx, cancel := context.WithTimeout(context.Background(), app.GetGracefulShutdownTimeout())
+	ctx, cancel := context.WithTimeout(context.Background(), app.GracefulShutdownTimeout())
 	defer cancel()
 
 	componentErr := make(chan error, len(app.startStoppers))

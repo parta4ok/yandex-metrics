@@ -6,6 +6,7 @@ import (
 	_ "embed"
 	"fmt"
 	"html/template"
+	"log/slog"
 	"mime"
 	"net/http"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/parta4ok/yandex-metrics/metrics/internal/entities"
 	"github.com/parta4ok/yandex-metrics/metrics/internal/port"
+	toolkitconfig "github.com/parta4ok/yandex-metrics/toolkit/config"
 )
 
 const (
@@ -56,7 +58,16 @@ func WithTLS(certificateFile string, keyFile string) Option {
 	}
 }
 
-func NewServer(address string, service port.MetricServiceProvider, options ...Option) (*Server, error) {
+func NewServer(
+	config toolkitconfig.HTTPServerConfig,
+	service port.MetricServiceProvider,
+	options ...Option,
+) (*Server, error) {
+	if config == nil {
+		return nil, errors.Wrap(entities.ErrInvalidParam, "new http server. config is nil")
+	}
+
+	address := config.HTTPAddress()
 	if address == "" {
 		return nil, errors.Wrap(entities.ErrInvalidParam, "new http server. address is empty")
 	}
@@ -195,6 +206,9 @@ func (s *Server) handleError(resp http.ResponseWriter, err error) {
 	case errors.Is(err, entities.ErrNotFound):
 		status = http.StatusNotFound
 	}
+	if status == http.StatusInternalServerError {
+		slog.Info("handle HTTP request error", "error", err)
+	}
 
 	http.Error(resp, http.StatusText(status), status)
 }
@@ -213,8 +227,8 @@ func (s *Server) validateContentType(req *http.Request) error {
 	return nil
 }
 
-func (s *Server) newMetric(id string, mType entities.MType, value string) (*entities.Metrics, error) {
-	metric, err := entities.NewMetrics(id, mType)
+func (s *Server) newMetric(id string, mType entities.MType, value string) (*entities.Metric, error) {
+	metric, err := entities.NewMetric(id, mType)
 	if err != nil {
 		return nil, errors.Wrap(err, "new metric. create metric")
 	}
@@ -237,7 +251,7 @@ func (s *Server) newMetric(id string, mType entities.MType, value string) (*enti
 	return metric, nil
 }
 
-func metricTextValue(metric *entities.Metrics) (string, error) {
+func metricTextValue(metric *entities.Metric) (string, error) {
 	if metric == nil {
 		return "", errors.Wrap(entities.ErrInternalError, "metric text value. metric is nil")
 	}
@@ -260,7 +274,7 @@ func metricTextValue(metric *entities.Metrics) (string, error) {
 	}
 }
 
-func metricListBody(metrics []*entities.Metrics) ([]byte, error) {
+func metricListBody(metrics []*entities.Metric) ([]byte, error) {
 	type metricView struct {
 		Name  string
 		Type  entities.MType

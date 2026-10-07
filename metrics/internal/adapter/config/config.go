@@ -38,22 +38,22 @@ func NewConfig(filePath string) (*Config, error) {
 	}, nil
 }
 
-func (c *Config) GetPublicHTTPAddr() string {
+func (c *Config) HTTPAddress() string {
 	return c.String(publicHTTPAddressKey)
 }
 
-func (c *Config) GetGracefulShutdownTimeout() time.Duration {
+func (c *Config) GracefulShutdownTimeout() time.Duration {
 	return c.Duration(gracefulShutdownTimeoutKey)
 }
 
-func (c *Config) IsPublicHTTPTLSEnabled() bool {
+func (c *Config) TLSEnabled() bool {
 	return c.Bool(publicHTTPTLSEnabledKey)
 }
 
-func (c *Config) GetPublicHTTPTLSCertificateFile() string {
+func (c *Config) TLSCertificateFile() string {
 	return c.String(publicHTTPTLSCertificateFileKey)
 }
 
-func (c *Config) GetPublicHTTPTLSKeyFile() string {
+func (c *Config) TLSKeyFile() string {
 	return c.String(publicHTTPTLSKeyFileKey)
 }

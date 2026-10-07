@@ -42,10 +42,10 @@ func (m *MockMetricServiceProvider) EXPECT() *MockMetricServiceProviderMockRecor
 }
 
 // GetMetric mocks base method.
-func (m *MockMetricServiceProvider) GetMetric(ctx context.Context, id string, mType entities.MType) (*entities.Metrics, error) {
+func (m *MockMetricServiceProvider) GetMetric(ctx context.Context, id string, mType entities.MType) (*entities.Metric, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetMetric", ctx, id, mType)
-	ret0, _ := ret[0].(*entities.Metrics)
+	ret0, _ := ret[0].(*entities.Metric)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -57,10 +57,10 @@ func (mr *MockMetricServiceProviderMockRecorder) GetMetric(ctx, id, mType any) *
 }
 
 // ListMetrics mocks base method.
-func (m *MockMetricServiceProvider) ListMetrics(ctx context.Context) ([]*entities.Metrics, error) {
+func (m *MockMetricServiceProvider) ListMetrics(ctx context.Context) ([]*entities.Metric, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListMetrics", ctx)
-	ret0, _ := ret[0].([]*entities.Metrics)
+	ret0, _ := ret[0].([]*entities.Metric)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -72,7 +72,7 @@ func (mr *MockMetricServiceProviderMockRecorder) ListMetrics(ctx any) *gomock.Ca
 }
 
 // UpdateMetric mocks base method.
-func (m *MockMetricServiceProvider) UpdateMetric(ctx context.Context, metric *entities.Metrics) error {
+func (m *MockMetricServiceProvider) UpdateMetric(ctx context.Context, metric *entities.Metric) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UpdateMetric", ctx, metric)
 	ret0, _ := ret[0].(error)

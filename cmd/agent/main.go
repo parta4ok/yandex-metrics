@@ -12,8 +12,9 @@ import (
 )
 
 const (
-	configPathEnv     = "METRIC_CONFIG_PATH"
-	defaultConfigPath = "config/agent.yml"
+	configPathEnv        = "METRIC_CONFIG_PATH"
+	defaultConfigPath    = "config/agent.yml"
+	defaultConfigExample = "config/agent.example.yml"
 )
 
 func main() {
@@ -64,6 +65,10 @@ func resolveConfigPath(configPath string) string {
 
 	if configPath := os.Getenv(configPathEnv); configPath != "" {
 		return configPath
+	}
+
+	if _, err := os.Stat(defaultConfigPath); os.IsNotExist(err) {
+		return defaultConfigExample
 	}
 
 	return defaultConfigPath

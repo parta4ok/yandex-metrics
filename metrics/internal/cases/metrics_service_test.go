@@ -60,7 +60,7 @@ func TestMetricsService_UpdateMetric(t *testing.T) {
 
 	tests := []struct {
 		name         string
-		metric       *entities.Metrics
+		metric       *entities.Metric
 		setupStorage func(*testdata.MockMetricsStorage)
 		wantErr      error
 	}{
@@ -205,7 +205,7 @@ func TestMetricsService_ListMetrics(t *testing.T) {
 			name: "success",
 			setupStorage: func(storage *testdata.MockMetricsStorage) {
 				storage.EXPECT().ListMetrics(gomock.Any()).Return(
-					[]*entities.Metrics{newCounterMetric(t, "requests", 3)},
+					[]*entities.Metric{newCounterMetric(t, "requests", 3)},
 					nil,
 				)
 			},
@@ -237,10 +237,10 @@ func TestMetricsService_ListMetrics(t *testing.T) {
 	}
 }
 
-func newCounterMetric(t *testing.T, id string, delta int64) *entities.Metrics {
+func newCounterMetric(t *testing.T, id string, delta int64) *entities.Metric {
 	t.Helper()
 
-	metric, err := entities.NewMetrics(id, entities.Counter)
+	metric, err := entities.NewMetric(id, entities.Counter)
 	require.NoError(t, err)
 
 	metric.SetDelta(&delta)

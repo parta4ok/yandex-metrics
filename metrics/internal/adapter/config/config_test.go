@@ -30,11 +30,11 @@ metrics:
 
 	loadedConfig, err := config.NewConfig(path)
 	require.NoError(t, err)
-	require.Equal(t, ":8080", loadedConfig.GetPublicHTTPAddr())
-	require.Equal(t, 5*time.Second, loadedConfig.GetGracefulShutdownTimeout())
-	require.True(t, loadedConfig.IsPublicHTTPTLSEnabled())
-	require.Equal(t, "cert.pem", loadedConfig.GetPublicHTTPTLSCertificateFile())
-	require.Equal(t, "key.pem", loadedConfig.GetPublicHTTPTLSKeyFile())
+	require.Equal(t, ":8080", loadedConfig.HTTPAddress())
+	require.Equal(t, 5*time.Second, loadedConfig.GracefulShutdownTimeout())
+	require.True(t, loadedConfig.TLSEnabled())
+	require.Equal(t, "cert.pem", loadedConfig.TLSCertificateFile())
+	require.Equal(t, "key.pem", loadedConfig.TLSKeyFile())
 }
 
 func TestNewConfig_InvalidPath(t *testing.T) {

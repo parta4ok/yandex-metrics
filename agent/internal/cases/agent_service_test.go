@@ -61,43 +61,26 @@ func TestNewAgentService(t *testing.T) {
 func TestAgentService_UpdateMetrics(t *testing.T) {
 	t.Parallel()
 
-	t.Run("creates the first snapshot", func(t *testing.T) {
+	t.Run("updates gauges and increments poll count", func(t *testing.T) {
 		t.Parallel()
 
 		service, client, provider, storage := newService(t)
 		actual := gaugeMetrics(t, entities.Alloc, 2.5)
 
 		provider.EXPECT().GetActualAgentData(gomock.Any()).Return(actual, nil)
-		storage.EXPECT().GetAgentData(gomock.Any()).Return(nil, entities.ErrNotFound)
-		storage.EXPECT().SaveAgentData(gomock.Any(), gomock.Any()).DoAndReturn(
+		storage.EXPECT().UpdateGauges(gomock.Any(), actual).DoAndReturn(
 			func(_ context.Context, metrics *entities.Metrics) error {
-				assertMetricValues(t, metrics, 2.5, 1)
+				metricList, err := metrics.All()
+				require.NoError(t, err)
+				require.Len(t, metricList, 1)
+				require.Equal(t, 2.5, *metricList[0].Value())
 				return nil
 			},
 		)
+		storage.EXPECT().IncrementCounter(gomock.Any(), entities.PollCount, int64(1)).Return(nil)
 
 		require.NoError(t, service.UpdateMetrics(context.Background()))
 		require.NotNil(t, client)
-	})
-
-	t.Run("updates an existing snapshot", func(t *testing.T) {
-		t.Parallel()
-
-		service, _, provider, storage := newService(t)
-		actual := gaugeMetrics(t, entities.Alloc, 2.5)
-		stored := gaugeMetrics(t, entities.Alloc, 1.5)
-		require.NoError(t, stored.IncrementCounter(entities.PollCount, 4))
-
-		provider.EXPECT().GetActualAgentData(gomock.Any()).Return(actual, nil)
-		storage.EXPECT().GetAgentData(gomock.Any()).Return(stored, nil)
-		storage.EXPECT().SaveAgentData(gomock.Any(), stored).DoAndReturn(
-			func(_ context.Context, metrics *entities.Metrics) error {
-				assertMetricValues(t, metrics, 2.5, 5)
-				return nil
-			},
-		)
-
-		require.NoError(t, service.UpdateMetrics(context.Background()))
 	})
 
 	t.Run("wraps provider error", func(t *testing.T) {
@@ -109,12 +92,12 @@ func TestAgentService_UpdateMetrics(t *testing.T) {
 		require.ErrorIs(t, service.UpdateMetrics(context.Background()), entities.ErrInternalError)
 	})
 
-	t.Run("wraps storage read error", func(t *testing.T) {
+	t.Run("wraps gauge update error", func(t *testing.T) {
 		t.Parallel()
 
 		service, _, provider, storage := newService(t)
 		provider.EXPECT().GetActualAgentData(gomock.Any()).Return(gaugeMetrics(t, entities.Alloc, 1), nil)
-		storage.EXPECT().GetAgentData(gomock.Any()).Return(nil, entities.ErrInternalError)
+		storage.EXPECT().UpdateGauges(gomock.Any(), gomock.Any()).Return(entities.ErrInternalError)
 
 		require.ErrorIs(t, service.UpdateMetrics(context.Background()), entities.ErrInternalError)
 	})
@@ -122,11 +105,10 @@ func TestAgentService_UpdateMetrics(t *testing.T) {
 	t.Run("rejects counter from provider", func(t *testing.T) {
 		t.Parallel()
 
-		service, _, provider, storage := newService(t)
+		service, _, provider, _ := newService(t)
 		actual := entities.NewMetrics()
 		require.NoError(t, actual.IncrementCounter(entities.PollCount, 1))
 		provider.EXPECT().GetActualAgentData(gomock.Any()).Return(actual, nil)
-		storage.EXPECT().GetAgentData(gomock.Any()).Return(nil, entities.ErrNotFound)
 
 		require.ErrorIs(t, service.UpdateMetrics(context.Background()), entities.ErrInvalidParam)
 	})
@@ -134,40 +116,21 @@ func TestAgentService_UpdateMetrics(t *testing.T) {
 	t.Run("wraps nil provider result", func(t *testing.T) {
 		t.Parallel()
 
-		service, _, provider, storage := newService(t)
+		service, _, provider, _ := newService(t)
 		provider.EXPECT().GetActualAgentData(gomock.Any()).Return(nil, nil)
-		storage.EXPECT().GetAgentData(gomock.Any()).Return(nil, entities.ErrNotFound)
 
 		require.ErrorIs(t, service.UpdateMetrics(context.Background()), entities.ErrInvalidParam)
 	})
 
-	t.Run("rejects nil stored snapshot with gauges", func(t *testing.T) {
+	t.Run("wraps poll count increment error", func(t *testing.T) {
 		t.Parallel()
 
 		service, _, provider, storage := newService(t)
 		provider.EXPECT().GetActualAgentData(gomock.Any()).Return(gaugeMetrics(t, entities.Alloc, 1), nil)
-		storage.EXPECT().GetAgentData(gomock.Any()).Return(nil, nil)
-
-		require.ErrorIs(t, service.UpdateMetrics(context.Background()), entities.ErrInvalidParam)
-	})
-
-	t.Run("rejects nil stored snapshot without gauges", func(t *testing.T) {
-		t.Parallel()
-
-		service, _, provider, storage := newService(t)
-		provider.EXPECT().GetActualAgentData(gomock.Any()).Return(entities.NewMetrics(), nil)
-		storage.EXPECT().GetAgentData(gomock.Any()).Return(nil, nil)
-
-		require.ErrorIs(t, service.UpdateMetrics(context.Background()), entities.ErrInvalidParam)
-	})
-
-	t.Run("wraps save error", func(t *testing.T) {
-		t.Parallel()
-
-		service, _, provider, storage := newService(t)
-		provider.EXPECT().GetActualAgentData(gomock.Any()).Return(gaugeMetrics(t, entities.Alloc, 1), nil)
-		storage.EXPECT().GetAgentData(gomock.Any()).Return(nil, entities.ErrNotFound)
-		storage.EXPECT().SaveAgentData(gomock.Any(), gomock.Any()).Return(entities.ErrInternalError)
+		storage.EXPECT().UpdateGauges(gomock.Any(), gomock.Any()).Return(nil)
+		storage.EXPECT().
+			IncrementCounter(gomock.Any(), entities.PollCount, int64(1)).
+			Return(entities.ErrInternalError)
 
 		require.ErrorIs(t, service.UpdateMetrics(context.Background()), entities.ErrInternalError)
 	})
@@ -185,8 +148,49 @@ func TestAgentService_SendMetrics(t *testing.T) {
 		storage.EXPECT().GetAgentData(gomock.Any()).Return(metrics, nil)
 		client.EXPECT().UpdateAgentData(gomock.Any(), gomock.Any()).Return(entities.ErrInternalError)
 		client.EXPECT().UpdateAgentData(gomock.Any(), gomock.Any()).Return(nil)
+		storage.EXPECT().AcknowledgeCounter(gomock.Any(), entities.PollCount, int64(2)).Return(nil)
 
 		require.NoError(t, service.SendMetrics(context.Background()))
+	})
+
+	t.Run("retains counter after a failed send", func(t *testing.T) {
+		t.Parallel()
+
+		service, client, _, storage := newService(t)
+		metrics := entities.NewMetrics()
+		require.NoError(t, metrics.IncrementCounter(entities.PollCount, 2))
+		storage.EXPECT().GetAgentData(gomock.Any()).Return(metrics, nil)
+		client.EXPECT().
+			UpdateAgentData(gomock.Any(), gomock.Any()).
+			Return(entities.ErrInternalError)
+
+		require.NoError(t, service.SendMetrics(context.Background()))
+	})
+
+	t.Run("does not acknowledge gauges", func(t *testing.T) {
+		t.Parallel()
+
+		service, client, _, storage := newService(t)
+		metrics := gaugeMetrics(t, entities.Alloc, 1.5)
+		storage.EXPECT().GetAgentData(gomock.Any()).Return(metrics, nil)
+		client.EXPECT().UpdateAgentData(gomock.Any(), gomock.Any()).Return(nil)
+
+		require.NoError(t, service.SendMetrics(context.Background()))
+	})
+
+	t.Run("wraps counter acknowledgement error", func(t *testing.T) {
+		t.Parallel()
+
+		service, client, _, storage := newService(t)
+		metrics := entities.NewMetrics()
+		require.NoError(t, metrics.IncrementCounter(entities.PollCount, 2))
+		storage.EXPECT().GetAgentData(gomock.Any()).Return(metrics, nil)
+		client.EXPECT().UpdateAgentData(gomock.Any(), gomock.Any()).Return(nil)
+		storage.EXPECT().
+			AcknowledgeCounter(gomock.Any(), entities.PollCount, int64(2)).
+			Return(entities.ErrInternalError)
+
+		require.ErrorIs(t, service.SendMetrics(context.Background()), entities.ErrInternalError)
 	})
 
 	t.Run("wraps storage error", func(t *testing.T) {
@@ -242,16 +246,4 @@ func gaugeMetrics(t *testing.T, name entities.MName, value float64) *entities.Me
 	require.NoError(t, metrics.UpdateGauge(name, value))
 
 	return metrics
-}
-
-func assertMetricValues(t *testing.T, metrics *entities.Metrics, value float64, delta int64) {
-	t.Helper()
-
-	metricList, err := metrics.All()
-	require.NoError(t, err)
-	require.Len(t, metricList, 2)
-	require.Equal(t, entities.Alloc, metricList[0].Name())
-	require.Equal(t, value, *metricList[0].Value())
-	require.Equal(t, entities.PollCount, metricList[1].Name())
-	require.Equal(t, delta, *metricList[1].Delta())
 }

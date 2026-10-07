@@ -10,5 +10,7 @@ import (
 
 type Storage interface {
 	GetAgentData(ctx context.Context) (*entities.Metrics, error)
-	SaveAgentData(ctx context.Context, metrics *entities.Metrics) error
+	UpdateGauges(ctx context.Context, metrics *entities.Metrics) error
+	IncrementCounter(ctx context.Context, name entities.MName, delta int64) error
+	AcknowledgeCounter(ctx context.Context, name entities.MName, delta int64) error
 }

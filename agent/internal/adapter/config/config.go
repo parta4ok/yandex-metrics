@@ -38,22 +38,22 @@ func NewConfig(filePath string) (*Config, error) {
 	}, nil
 }
 
-func (c *Config) GetGracefulShutdownTimeout() time.Duration {
+func (c *Config) GracefulShutdownTimeout() time.Duration {
 	return c.Duration(gracefulShutdownTimeoutKey)
 }
 
-func (c *Config) GetPollInterval() time.Duration {
+func (c *Config) PollInterval() time.Duration {
 	return c.Duration(pollIntervalKey)
 }
 
-func (c *Config) GetReportInterval() time.Duration {
+func (c *Config) ReportInterval() time.Duration {
 	return c.Duration(reportIntervalKey)
 }
 
-func (c *Config) GetMetricsHTTPAddress() string {
+func (c *Config) MetricsHTTPAddress() string {
 	return c.String(metricsHTTPAddressKey)
 }
 
-func (c *Config) GetMetricsHTTPTimeout() time.Duration {
+func (c *Config) MetricsHTTPTimeout() time.Duration {
 	return c.Duration(metricsHTTPTimeoutKey)
 }

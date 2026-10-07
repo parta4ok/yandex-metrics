@@ -41,6 +41,20 @@ func (m *MockStorage) EXPECT() *MockStorageMockRecorder {
 	return m.recorder
 }
 
+// AcknowledgeCounter mocks base method.
+func (m *MockStorage) AcknowledgeCounter(ctx context.Context, name entities.MName, delta int64) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AcknowledgeCounter", ctx, name, delta)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AcknowledgeCounter indicates an expected call of AcknowledgeCounter.
+func (mr *MockStorageMockRecorder) AcknowledgeCounter(ctx, name, delta any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AcknowledgeCounter", reflect.TypeOf((*MockStorage)(nil).AcknowledgeCounter), ctx, name, delta)
+}
+
 // GetAgentData mocks base method.
 func (m *MockStorage) GetAgentData(ctx context.Context) (*entities.Metrics, error) {
 	m.ctrl.T.Helper()
@@ -56,16 +70,30 @@ func (mr *MockStorageMockRecorder) GetAgentData(ctx any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAgentData", reflect.TypeOf((*MockStorage)(nil).GetAgentData), ctx)
 }
 
-// SaveAgentData mocks base method.
-func (m *MockStorage) SaveAgentData(ctx context.Context, metrics *entities.Metrics) error {
+// IncrementCounter mocks base method.
+func (m *MockStorage) IncrementCounter(ctx context.Context, name entities.MName, delta int64) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SaveAgentData", ctx, metrics)
+	ret := m.ctrl.Call(m, "IncrementCounter", ctx, name, delta)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
-// SaveAgentData indicates an expected call of SaveAgentData.
-func (mr *MockStorageMockRecorder) SaveAgentData(ctx, metrics any) *gomock.Call {
+// IncrementCounter indicates an expected call of IncrementCounter.
+func (mr *MockStorageMockRecorder) IncrementCounter(ctx, name, delta any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveAgentData", reflect.TypeOf((*MockStorage)(nil).SaveAgentData), ctx, metrics)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IncrementCounter", reflect.TypeOf((*MockStorage)(nil).IncrementCounter), ctx, name, delta)
+}
+
+// UpdateGauges mocks base method.
+func (m *MockStorage) UpdateGauges(ctx context.Context, metrics *entities.Metrics) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateGauges", ctx, metrics)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateGauges indicates an expected call of UpdateGauges.
+func (mr *MockStorageMockRecorder) UpdateGauges(ctx, metrics any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateGauges", reflect.TypeOf((*MockStorage)(nil).UpdateGauges), ctx, metrics)
 }

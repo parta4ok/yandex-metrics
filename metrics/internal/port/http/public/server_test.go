@@ -23,7 +23,7 @@ func Test_ServerUpdateMetric_Success(t *testing.T) {
 	service := testdata.NewMockMetricServiceProvider(ctrl)
 	testaddress := ":8080"
 
-	server, err := public.NewServer(testaddress, service)
+	server, err := public.NewServer(serverConfig(testaddress), service)
 	require.NoError(t, err)
 	require.NotNil(t, server)
 
@@ -40,7 +40,7 @@ func Test_ServerUpdateMetric_Success(t *testing.T) {
 
 	resp := httptest.NewRecorder()
 
-	metric, err := entities.NewMetrics(
+	metric, err := entities.NewMetric(
 		id,
 		entities.MType(mtype),
 	)
@@ -51,7 +51,7 @@ func Test_ServerUpdateMetric_Success(t *testing.T) {
 	require.NoError(t, metric.Validate())
 
 	service.EXPECT().UpdateMetric(gomock.Any(), gomock.Any()).DoAndReturn(
-		func(_ context.Context, metric *entities.Metrics) error {
+		func(_ context.Context, metric *entities.Metric) error {
 			require.Equal(t, entities.Counter, metric.MType())
 			require.Equal(t, id, metric.ID())
 			require.Equal(t, delta, *metric.Delta())
@@ -252,7 +252,7 @@ func TestServerGetMetric(t *testing.T) {
 			setupService: func(_ *testing.T, service *testdata.MockMetricServiceProvider) {
 				service.EXPECT().
 					GetMetric(gomock.Any(), "memory", entities.Gauge).
-					Return(&entities.Metrics{}, nil)
+					Return(&entities.Metric{}, nil)
 			},
 			status: http.StatusInternalServerError,
 		},
@@ -285,7 +285,7 @@ func TestServerListMetrics(t *testing.T) {
 
 		server, service := newTestServer(t)
 		service.EXPECT().ListMetrics(gomock.Any()).Return(
-			[]*entities.Metrics{
+			[]*entities.Metric{
 				newCounterMetric(t, "requests", 42),
 				newGaugeMetric(t, "<memory>", 1.5),
 			},
@@ -317,7 +317,7 @@ func TestServerListMetrics(t *testing.T) {
 		t.Parallel()
 
 		server, service := newTestServer(t)
-		service.EXPECT().ListMetrics(gomock.Any()).Return([]*entities.Metrics{nil}, nil)
+		service.EXPECT().ListMetrics(gomock.Any()).Return([]*entities.Metric{nil}, nil)
 
 		resp := httptest.NewRecorder()
 		server.ServeHTTP(resp, httptest.NewRequest(http.MethodGet, "/", nil))
@@ -333,7 +333,7 @@ func newTestServer(t *testing.T) (*public.Server, *testdata.MockMetricServicePro
 	t.Cleanup(ctrl.Finish)
 
 	service := testdata.NewMockMetricServiceProvider(ctrl)
-	server, err := public.NewServer(":8080", service)
+	server, err := public.NewServer(serverConfig(":8080"), service)
 	require.NoError(t, err)
 
 	return server, service
@@ -350,22 +350,28 @@ func newUpdateMetricRequest() *http.Request {
 	return req
 }
 
-func newCounterMetric(t *testing.T, id string, delta int64) *entities.Metrics {
+func newCounterMetric(t *testing.T, id string, delta int64) *entities.Metric {
 	t.Helper()
 
-	metric, err := entities.NewMetrics(id, entities.Counter)
+	metric, err := entities.NewMetric(id, entities.Counter)
 	require.NoError(t, err)
 	metric.SetDelta(&delta)
 
 	return metric
 }
 
-func newGaugeMetric(t *testing.T, id string, value float64) *entities.Metrics {
+func newGaugeMetric(t *testing.T, id string, value float64) *entities.Metric {
 	t.Helper()
 
-	metric, err := entities.NewMetrics(id, entities.Gauge)
+	metric, err := entities.NewMetric(id, entities.Gauge)
 	require.NoError(t, err)
 	metric.SetValue(&value)
 
 	return metric
+}
+
+type serverConfig string
+
+func (c serverConfig) HTTPAddress() string {
+	return string(c)
 }

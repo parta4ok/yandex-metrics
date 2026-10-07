@@ -2,7 +2,7 @@ package entities
 
 import "github.com/pkg/errors"
 
-type Metrics struct {
+type Metric struct {
 	id    string
 	mType MType
 	delta *int64
@@ -10,7 +10,7 @@ type Metrics struct {
 	hash  *string
 }
 
-func NewMetrics(id string, mType MType) (*Metrics, error) {
+func NewMetric(id string, mType MType) (*Metric, error) {
 	if id == "" {
 		return nil, errors.Wrap(ErrInvalidParam, "new metrics. id is empty")
 	}
@@ -19,45 +19,45 @@ func NewMetrics(id string, mType MType) (*Metrics, error) {
 		return nil, errors.Wrap(ErrInvalidParam, "new metrics. metric type is invalid")
 	}
 
-	return &Metrics{
+	return &Metric{
 		id:    id,
 		mType: mType,
 	}, nil
 }
 
-func (m *Metrics) ID() string {
+func (m *Metric) ID() string {
 	return m.id
 }
 
-func (m *Metrics) MType() MType {
+func (m *Metric) MType() MType {
 	return m.mType
 }
 
-func (m *Metrics) Delta() *int64 {
+func (m *Metric) Delta() *int64 {
 	return m.delta
 }
 
-func (m *Metrics) SetDelta(delta *int64) {
+func (m *Metric) SetDelta(delta *int64) {
 	m.delta = delta
 }
 
-func (m *Metrics) Value() *float64 {
+func (m *Metric) Value() *float64 {
 	return m.value
 }
 
-func (m *Metrics) SetValue(value *float64) {
+func (m *Metric) SetValue(value *float64) {
 	m.value = value
 }
 
-func (m *Metrics) Hash() *string {
+func (m *Metric) Hash() *string {
 	return m.hash
 }
 
-func (m *Metrics) SetHash(hash *string) {
+func (m *Metric) SetHash(hash *string) {
 	m.hash = hash
 }
 
-func (m *Metrics) Validate() error {
+func (m *Metric) Validate() error {
 	if m == nil {
 		return errors.Wrap(ErrInvalidParam, "validate metrics. metrics is nil")
 	}

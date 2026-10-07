@@ -42,10 +42,10 @@ func (m *MockMetricsStorage) EXPECT() *MockMetricsStorageMockRecorder {
 }
 
 // GetMetric mocks base method.
-func (m *MockMetricsStorage) GetMetric(ctx context.Context, id string, mType entities.MType) (*entities.Metrics, error) {
+func (m *MockMetricsStorage) GetMetric(ctx context.Context, id string, mType entities.MType) (*entities.Metric, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetMetric", ctx, id, mType)
-	ret0, _ := ret[0].(*entities.Metrics)
+	ret0, _ := ret[0].(*entities.Metric)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -57,10 +57,10 @@ func (mr *MockMetricsStorageMockRecorder) GetMetric(ctx, id, mType any) *gomock.
 }
 
 // ListMetrics mocks base method.
-func (m *MockMetricsStorage) ListMetrics(ctx context.Context) ([]*entities.Metrics, error) {
+func (m *MockMetricsStorage) ListMetrics(ctx context.Context) ([]*entities.Metric, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListMetrics", ctx)
-	ret0, _ := ret[0].([]*entities.Metrics)
+	ret0, _ := ret[0].([]*entities.Metric)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -72,7 +72,7 @@ func (mr *MockMetricsStorageMockRecorder) ListMetrics(ctx any) *gomock.Call {
 }
 
 // UpdateMetric mocks base method.
-func (m *MockMetricsStorage) UpdateMetric(ctx context.Context, metric *entities.Metrics) error {
+func (m *MockMetricsStorage) UpdateMetric(ctx context.Context, metric *entities.Metric) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UpdateMetric", ctx, metric)
 	ret0, _ := ret[0].(error)

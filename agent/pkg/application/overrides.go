@@ -16,17 +16,17 @@ type resolvedConfig struct {
 }
 
 func resolveConfig(config ConfigProvider, overrides Overrides) ConfigProvider {
-	address := config.GetMetricsHTTPAddress()
+	address := config.MetricsHTTPAddress()
 	if overrides.MetricsHTTPAddress != nil {
 		address = *overrides.MetricsHTTPAddress
 	}
 
-	pollInterval := config.GetPollInterval()
+	pollInterval := config.PollInterval()
 	if overrides.PollInterval != nil {
 		pollInterval = *overrides.PollInterval
 	}
 
-	reportInterval := config.GetReportInterval()
+	reportInterval := config.ReportInterval()
 	if overrides.ReportInterval != nil {
 		reportInterval = *overrides.ReportInterval
 	}
@@ -39,14 +39,14 @@ func resolveConfig(config ConfigProvider, overrides Overrides) ConfigProvider {
 	}
 }
 
-func (c resolvedConfig) GetMetricsHTTPAddress() string {
+func (c resolvedConfig) MetricsHTTPAddress() string {
 	return c.metricsHTTPAddress
 }
 
-func (c resolvedConfig) GetPollInterval() time.Duration {
+func (c resolvedConfig) PollInterval() time.Duration {
 	return c.pollInterval
 }
 
-func (c resolvedConfig) GetReportInterval() time.Duration {
+func (c resolvedConfig) ReportInterval() time.Duration {
 	return c.reportInterval
 }

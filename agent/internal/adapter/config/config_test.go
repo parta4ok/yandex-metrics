@@ -30,11 +30,11 @@ agent:
 
 	loadedConfig, err := config.NewConfig(path)
 	require.NoError(t, err)
-	require.Equal(t, 5*time.Second, loadedConfig.GetGracefulShutdownTimeout())
-	require.Equal(t, 2*time.Second, loadedConfig.GetPollInterval())
-	require.Equal(t, 10*time.Second, loadedConfig.GetReportInterval())
-	require.Equal(t, "http://localhost:8080", loadedConfig.GetMetricsHTTPAddress())
-	require.Equal(t, 3*time.Second, loadedConfig.GetMetricsHTTPTimeout())
+	require.Equal(t, 5*time.Second, loadedConfig.GracefulShutdownTimeout())
+	require.Equal(t, 2*time.Second, loadedConfig.PollInterval())
+	require.Equal(t, 10*time.Second, loadedConfig.ReportInterval())
+	require.Equal(t, "http://localhost:8080", loadedConfig.MetricsHTTPAddress())
+	require.Equal(t, 3*time.Second, loadedConfig.MetricsHTTPTimeout())
 }
 
 func TestNewConfig_InvalidPath(t *testing.T) {

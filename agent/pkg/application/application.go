@@ -88,9 +88,9 @@ func (app *Application) buildDataProvider() {
 
 func (app *Application) buildMetricServiceClient() error {
 	client, err := metricsclient.NewClient(
-		app.GetMetricsHTTPAddress(),
+		app.MetricsHTTPAddress(),
 		&http.Client{
-			Timeout: app.GetMetricsHTTPTimeout(),
+			Timeout: app.MetricsHTTPTimeout(),
 		},
 	)
 	if err != nil {
@@ -118,12 +118,12 @@ func (app *Application) buildService() error {
 }
 
 func (app *Application) buildTickers() error {
-	pollTicker, err := NewTicker(app.GetPollInterval(), app.service.UpdateMetrics)
+	pollTicker, err := NewTicker(app.PollInterval(), app.service.UpdateMetrics)
 	if err != nil {
 		return errors.Wrap(err, "build tickers. create poll ticker")
 	}
 
-	reportTicker, err := NewTicker(app.GetReportInterval(), app.service.SendMetrics)
+	reportTicker, err := NewTicker(app.ReportInterval(), app.service.SendMetrics)
 	if err != nil {
 		return errors.Wrap(err, "build tickers. create report ticker")
 	}
@@ -162,7 +162,7 @@ func (app *Application) runStartStoppers(ctx context.Context) error {
 }
 
 func (app *Application) stopStartStoppers() error {
-	ctx, cancel := context.WithTimeout(context.Background(), app.GetGracefulShutdownTimeout())
+	ctx, cancel := context.WithTimeout(context.Background(), app.GracefulShutdownTimeout())
 	defer cancel()
 
 	componentErr := make(chan error, len(app.startStoppers))
