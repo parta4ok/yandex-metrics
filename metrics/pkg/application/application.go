@@ -28,14 +28,14 @@ type Application struct {
 	logger        toolkitlogger.Logger
 }
 
-func New(configPath string, overrides Overrides) (*Application, error) {
+func New(configPath string, opts ...Option) (*Application, error) {
 	logger := baseslog.New()
-	config, err := config.NewConfig(configPath, logger)
+	config, err := config.NewConfig(configPath, logger, opts...)
 	if err != nil {
 		return nil, errors.Wrap(err, "new application. load config")
 	}
 
-	return newApplication(resolveConfig(config, overrides), logger)
+	return newApplication(config, logger)
 }
 
 func newApplication(config ConfigProvider, logger toolkitlogger.Logger) (*Application, error) {
