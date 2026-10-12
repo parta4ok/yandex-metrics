@@ -2,13 +2,14 @@ module github.com/parta4ok/yandex-metrics
 
 go 1.27
 
-require github.com/pkg/errors v0.9.1
-
 require (
 	github.com/go-chi/chi/v5 v5.3.2
 	github.com/knadh/koanf/parsers/yaml v1.1.1
+	github.com/knadh/koanf/providers/basicflag v1.1.1
+	github.com/knadh/koanf/providers/env/v2 v2.0.2
 	github.com/knadh/koanf/providers/file v1.2.1
 	github.com/knadh/koanf/v2 v2.3.7
+	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.9.0
 	go.uber.org/mock v0.6.0
 )
