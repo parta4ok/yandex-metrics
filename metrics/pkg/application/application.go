@@ -16,7 +16,7 @@ import (
 	"github.com/parta4ok/yandex-metrics/metrics/internal/port"
 	"github.com/parta4ok/yandex-metrics/metrics/internal/port/http/public"
 	toolkitlogger "github.com/parta4ok/yandex-metrics/toolkit/logger"
-	"github.com/parta4ok/yandex-metrics/toolkit/logger/baseslog"
+	"github.com/parta4ok/yandex-metrics/toolkit/logger/zaplog"
 )
 
 type Application struct {
@@ -29,7 +29,11 @@ type Application struct {
 }
 
 func New(configPath string, opts ...Option) (*Application, error) {
-	logger := baseslog.New()
+	logger, err := zaplog.New()
+	if err != nil {
+		return nil, errors.Wrap(err, "new application. create logger")
+	}
+
 	config, err := config.NewConfig(configPath, logger, opts...)
 	if err != nil {
 		return nil, errors.Wrap(err, "new application. load config")

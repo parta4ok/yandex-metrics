@@ -17,6 +17,7 @@ import (
 	"github.com/parta4ok/yandex-metrics/metrics/internal/port"
 	toolkitconfig "github.com/parta4ok/yandex-metrics/toolkit/config"
 	toolkitlogger "github.com/parta4ok/yandex-metrics/toolkit/logger"
+	"github.com/parta4ok/yandex-metrics/toolkit/middleware"
 )
 
 const (
@@ -94,6 +95,7 @@ func NewServer(
 	}
 
 	router := chi.NewRouter()
+	router.Use(middleware.Logging(logger))
 	server.registerRoutes(router)
 	server.handler = router
 
