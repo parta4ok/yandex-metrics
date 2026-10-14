@@ -86,7 +86,7 @@ func TestMetricsService_UpdateMetric(t *testing.T) {
 			setupStorage: func(storage *testdata.MockMetricsStorage) {
 				storage.EXPECT().
 					UpdateMetric(gomock.Any(), gomock.Any()).
-					Return(testdata.ErrTest)
+					Return(nil, testdata.ErrTest)
 			},
 		},
 		{
@@ -95,7 +95,7 @@ func TestMetricsService_UpdateMetric(t *testing.T) {
 			setupStorage: func(storage *testdata.MockMetricsStorage) {
 				storage.EXPECT().
 					UpdateMetric(gomock.Any(), gomock.Any()).
-					Return(nil)
+					Return(newCounterMetric(t, "requests", 1), nil)
 			},
 		},
 	}
@@ -113,7 +113,7 @@ func TestMetricsService_UpdateMetric(t *testing.T) {
 				tt.setupStorage(storage)
 			}
 
-			err = service.UpdateMetric(context.Background(), tt.metric)
+			_, err = service.UpdateMetric(context.Background(), tt.metric)
 
 			if tt.wantErr != nil {
 				require.ErrorIs(t, err, tt.wantErr)
