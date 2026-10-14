@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"mime"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/parta4ok/yandex-metrics/metrics/internal/entities"
 	"github.com/parta4ok/yandex-metrics/metrics/internal/port"
+	"github.com/parta4ok/yandex-metrics/metrics/pkg/dto"
 	toolkitconfig "github.com/parta4ok/yandex-metrics/toolkit/config"
 	toolkitlogger "github.com/parta4ok/yandex-metrics/toolkit/logger"
 	"github.com/parta4ok/yandex-metrics/toolkit/middleware"
@@ -25,6 +27,7 @@ const (
 	textPlainMediaType   = "text/plain"
 	textPlainContentType = textPlainMediaType + "; charset=utf-8"
 	textHTMLContentType  = "text/html; charset=utf-8"
+	jsonMediaType        = "application/json"
 	metricTypeParam      = "type"
 	metricNameParam      = "name"
 	metricValueParam     = "value"
@@ -128,12 +131,14 @@ func (s *Server) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 func (s *Server) registerRoutes(router chi.Router) {
 	router.Get("/", s.listMetrics)
 	router.Route(updateBasePath, func(router chi.Router) {
+		router.Post("/", s.updateMetricJSON)
 		router.Post(
 			fmt.Sprintf("/{%s}/{%s}/{%s}", metricTypeParam, metricNameParam, metricValueParam),
 			s.updateMetric,
 		)
 	})
 	router.Route(valueBasePath, func(router chi.Router) {
+		router.Post("/", s.getMetricJSON)
 		router.Get(
 			fmt.Sprintf("/{%s}/{%s}", metricTypeParam, metricNameParam),
 			s.getMetric,
@@ -157,13 +162,51 @@ func (s *Server) updateMetric(resp http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if err := s.service.UpdateMetric(req.Context(), metric); err != nil {
+	if _, err := s.service.UpdateMetric(req.Context(), metric); err != nil {
 		s.handleError(resp, err)
 		return
 	}
 
 	resp.Header().Set(contentTypeHeader, textPlainContentType)
 	resp.WriteHeader(http.StatusOK)
+}
+
+func (s *Server) updateMetricJSON(resp http.ResponseWriter, req *http.Request) {
+	var request dto.UpdateMetricRequestDTO
+	if err := s.decodeJSON(req, &request); err != nil {
+		s.handleError(resp, err)
+		return
+	}
+
+	metric, err := s.metricFromUpdateRequest(&request)
+	if err != nil {
+		s.handleError(resp, err)
+		return
+	}
+
+	stored, err := s.service.UpdateMetric(req.Context(), metric)
+	if err != nil {
+		s.handleError(resp, err)
+		return
+	}
+
+	s.writeMetricJSON(resp, stored)
+}
+
+func (s *Server) getMetricJSON(resp http.ResponseWriter, req *http.Request) {
+	var request dto.GetMetricRequestDTO
+	if err := s.decodeJSON(req, &request); err != nil {
+		s.handleError(resp, err)
+		return
+	}
+
+	metric, err := s.service.GetMetric(req.Context(), request.ID, entities.MType(request.MType))
+	if err != nil {
+		s.handleError(resp, err)
+		return
+	}
+
+	s.writeMetricJSON(resp, metric)
 }
 
 func (s *Server) getMetric(resp http.ResponseWriter, req *http.Request) {
@@ -219,6 +262,54 @@ func (s *Server) handleError(resp http.ResponseWriter, err error) {
 	}
 
 	http.Error(resp, http.StatusText(status), status)
+}
+
+func (s *Server) decodeJSON(req *http.Request, target any) error {
+	contentType, _, err := mime.ParseMediaType(req.Header.Get(contentTypeHeader))
+	if err != nil || contentType != jsonMediaType {
+		return errors.Wrap(entities.ErrInvalidParam, "decode json. expected application/json")
+	}
+
+	if err := json.NewDecoder(req.Body).Decode(target); err != nil {
+		return errors.Wrap(entities.ErrInvalidParam, "decode json. body is invalid")
+	}
+
+	return nil
+}
+
+func (s *Server) writeMetricJSON(resp http.ResponseWriter, metric *entities.Metric) {
+	body, err := json.Marshal(s.newMetricResponse(metric))
+	if err != nil {
+		s.handleError(resp, errors.Wrap(entities.ErrInternalError, "write metric json. marshal response"))
+		return
+	}
+
+	resp.Header().Set(contentTypeHeader, jsonMediaType)
+	resp.WriteHeader(http.StatusOK)
+	_, _ = resp.Write(body)
+}
+
+func (s *Server) metricFromUpdateRequest(request *dto.UpdateMetricRequestDTO) (*entities.Metric, error) {
+	metric, err := entities.NewMetric(request.ID, entities.MType(request.MType))
+	if err != nil {
+		return nil, errors.Wrap(err, "metric from update request. create metric")
+	}
+
+	metric.SetDelta(request.Delta)
+	metric.SetValue(request.Value)
+	metric.SetHash(request.Hash)
+
+	return metric, nil
+}
+
+func (s *Server) newMetricResponse(metric *entities.Metric) dto.MetricResponseDTO {
+	return dto.MetricResponseDTO{
+		ID:    metric.ID(),
+		MType: string(metric.MType()),
+		Delta: metric.Delta(),
+		Value: metric.Value(),
+		Hash:  metric.Hash(),
+	}
 }
 
 func (s *Server) validateContentType(req *http.Request) error {

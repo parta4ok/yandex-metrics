@@ -55,14 +55,14 @@ func TestClient_UpdateAgentData(t *testing.T) {
 		metric     *entities.Metric
 		statusCode int
 		transport  error
-		wantPath   string
+		wantBody   string
 		wantErr    error
 	}{
 		{name: "nil metric", wantErr: entities.ErrInvalidParam},
 		{name: "counter without delta", metric: newMetric(t, entities.PollCount), wantErr: entities.ErrInvalidParam},
 		{name: "gauge without value", metric: newMetric(t, entities.Alloc), wantErr: entities.ErrInvalidParam},
-		{name: "counter", metric: counterMetric(t, 42), statusCode: http.StatusOK, wantPath: "/update/counter/PollCount/42"},
-		{name: "gauge", metric: gaugeMetric(t, 1.5), statusCode: http.StatusOK, wantPath: "/update/gauge/Alloc/1.5"},
+		{name: "counter", metric: counterMetric(t, 42), statusCode: http.StatusOK, wantBody: `{"id":"PollCount","type":"counter","delta":42}`},
+		{name: "gauge", metric: gaugeMetric(t, 1.5), statusCode: http.StatusOK, wantBody: `{"id":"Alloc","type":"gauge","value":1.5}`},
 		{name: "bad request", metric: gaugeMetric(t, 1), statusCode: http.StatusBadRequest, wantErr: entities.ErrInvalidParam},
 		{name: "not found", metric: gaugeMetric(t, 1), statusCode: http.StatusNotFound, wantErr: entities.ErrNotFound},
 		{name: "internal error", metric: gaugeMetric(t, 1), statusCode: http.StatusInternalServerError, wantErr: entities.ErrInternalError},
@@ -77,9 +77,12 @@ func TestClient_UpdateAgentData(t *testing.T) {
 			client, err := adapter.NewClient("http://metrics.example/", &http.Client{
 				Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 					require.Equal(t, http.MethodPost, req.Method)
-					require.Equal(t, "text/plain", req.Header.Get("Content-Type"))
-					if tt.wantPath != "" {
-						require.Equal(t, tt.wantPath, req.URL.Path)
+					require.Equal(t, "/update", req.URL.Path)
+					require.Equal(t, "application/json", req.Header.Get("Content-Type"))
+					if tt.wantBody != "" {
+						body, err := io.ReadAll(req.Body)
+						require.NoError(t, err)
+						require.JSONEq(t, tt.wantBody, string(body))
 					}
 					if tt.transport != nil {
 						return nil, tt.transport

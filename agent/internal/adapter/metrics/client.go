@@ -1,12 +1,12 @@
 package metrics
 
 import (
+	"bytes"
 	"context"
-	"fmt"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/pkg/errors"
@@ -17,9 +17,9 @@ import (
 )
 
 const (
-	contentTypeHeader  = "Content-Type"
-	textPlainMediaType = "text/plain"
-	updatePath         = "update"
+	contentTypeHeader = "Content-Type"
+	jsonMediaType     = "application/json"
+	updatePath        = "update"
 )
 
 var _ cases.MetricServiceClient = (*Client)(nil)
@@ -66,24 +66,26 @@ func (c *Client) UpdateAgentData(ctx context.Context, metric *entities.Metric) e
 		return errors.Wrap(entities.ErrInvalidParam, "update agent data. metric is nil")
 	}
 
-	value, err := metricValue(metric)
+	request, err := c.newUpdateRequestDTO(metric)
 	if err != nil {
-		return errors.Wrap(err, "update agent data. get metric value")
+		return errors.Wrap(err, "update agent data. build request body")
 	}
 
-	requestURL := fmt.Sprintf(
-		"%s/%s/%s/%s/%s",
-		c.serverAddress,
-		updatePath,
-		metric.MType(),
-		metric.Name(),
-		value,
+	body, err := json.Marshal(request)
+	if err != nil {
+		return errors.Wrap(err, "update agent data. marshal request body")
+	}
+
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		c.serverAddress+"/"+updatePath,
+		bytes.NewReader(body),
 	)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, nil)
 	if err != nil {
 		return errors.Wrap(err, "update agent data. create request")
 	}
-	req.Header.Set(contentTypeHeader, textPlainMediaType)
+	req.Header.Set(contentTypeHeader, jsonMediaType)
 
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -116,21 +118,26 @@ func (c *Client) handleResponseStatus(statusCode int) error {
 	}
 }
 
-func metricValue(metric *entities.Metric) (string, error) {
+func (c *Client) newUpdateRequestDTO(metric *entities.Metric) (*UpdateMetricRequestDTO, error) {
+	request := &UpdateMetricRequestDTO{
+		ID:    string(metric.Name()),
+		MType: string(metric.MType()),
+	}
+
 	switch metric.MType() {
 	case entities.Counter:
 		if metric.Delta() == nil {
-			return "", errors.Wrap(entities.ErrInvalidParam, "get metric value. counter delta is nil")
+			return nil, errors.Wrap(entities.ErrInvalidParam, "new update request. counter delta is nil")
 		}
-
-		return strconv.FormatInt(*metric.Delta(), 10), nil
+		request.Delta = metric.Delta()
 	case entities.Gauge:
 		if metric.Value() == nil {
-			return "", errors.Wrap(entities.ErrInvalidParam, "get metric value. gauge value is nil")
+			return nil, errors.Wrap(entities.ErrInvalidParam, "new update request. gauge value is nil")
 		}
-
-		return strconv.FormatFloat(*metric.Value(), 'f', -1, 64), nil
+		request.Value = metric.Value()
 	default:
-		return "", errors.Wrap(entities.ErrInvalidParam, "get metric value. metric type is invalid")
+		return nil, errors.Wrap(entities.ErrInvalidParam, "new update request. metric type is invalid")
 	}
+
+	return request, nil
 }

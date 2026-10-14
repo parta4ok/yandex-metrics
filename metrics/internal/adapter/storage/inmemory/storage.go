@@ -34,26 +34,26 @@ func NewStorage(logger toolkitlogger.Logger) *Storage {
 	}
 }
 
-func (s *Storage) UpdateMetric(ctx context.Context, metric *entities.Metric) error {
+func (s *Storage) UpdateMetric(ctx context.Context, metric *entities.Metric) (*entities.Metric, error) {
 	if err := validateContext(ctx); err != nil {
-		return errors.Wrap(err, "update metric. context")
+		return nil, errors.Wrap(err, "update metric. context")
 	}
 
 	metricCopy, err := cloneMetric(metric)
 	if err != nil {
-		return errors.Wrap(err, "update metric. clone metric")
+		return nil, errors.Wrap(err, "update metric. clone metric")
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if err := validateContext(ctx); err != nil {
-		return errors.Wrap(err, "update metric. context")
+		return nil, errors.Wrap(err, "update metric. context")
 	}
 
 	if metricCopy.MType() == entities.Counter {
 		if err := s.processCounter(metricCopy); err != nil {
-			return errors.Wrap(err, "update metric. process counter")
+			return nil, errors.Wrap(err, "update metric. process counter")
 		}
 	}
 
@@ -63,7 +63,12 @@ func (s *Storage) UpdateMetric(ctx context.Context, metric *entities.Metric) err
 	}
 	s.metrics[key] = metricCopy
 
-	return nil
+	stored, err := cloneMetric(metricCopy)
+	if err != nil {
+		return nil, errors.Wrap(err, "update metric. clone stored metric")
+	}
+
+	return stored, nil
 }
 
 func (s *Storage) GetMetric(
