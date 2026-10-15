@@ -72,11 +72,12 @@ func (mr *MockMetricServiceProviderMockRecorder) ListMetrics(ctx any) *gomock.Ca
 }
 
 // UpdateMetric mocks base method.
-func (m *MockMetricServiceProvider) UpdateMetric(ctx context.Context, metric *entities.Metric) error {
+func (m *MockMetricServiceProvider) UpdateMetric(ctx context.Context, metric *entities.Metric) (*entities.Metric, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UpdateMetric", ctx, metric)
-	ret0, _ := ret[0].(error)
-	return ret0
+	ret0, _ := ret[0].(*entities.Metric)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // UpdateMetric indicates an expected call of UpdateMetric.

@@ -28,16 +28,20 @@ func NewMetricsService(storage MetricsStorage, logger toolkitlogger.Logger) (*Me
 	}, nil
 }
 
-func (s *MetricsService) UpdateMetric(ctx context.Context, metric *entities.Metric) error {
+func (s *MetricsService) UpdateMetric(
+	ctx context.Context,
+	metric *entities.Metric,
+) (*entities.Metric, error) {
 	if err := metric.Validate(); err != nil {
-		return errors.Wrap(err, "update metric. validate metric")
+		return nil, errors.Wrap(err, "update metric. validate metric")
 	}
 
-	if err := s.storage.UpdateMetric(ctx, metric); err != nil {
-		return errors.Wrap(err, "update metric. update storage")
+	stored, err := s.storage.UpdateMetric(ctx, metric)
+	if err != nil {
+		return nil, errors.Wrap(err, "update metric. update storage")
 	}
 
-	return nil
+	return stored, nil
 }
 
 func (s *MetricsService) GetMetric(

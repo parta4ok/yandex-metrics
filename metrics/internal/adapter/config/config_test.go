@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"flag"
 	"os"
 	"path/filepath"
 	"testing"
@@ -48,4 +49,66 @@ func TestNewConfig_InvalidPath(t *testing.T) {
 	loadedConfig, err = config.NewConfig(filepath.Join(t.TempDir(), "missing.yml"), noop.New())
 	require.Error(t, err)
 	require.Nil(t, loadedConfig)
+}
+
+func TestNewConfig_AddressPriority(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "metrics.yml")
+	require.NoError(t, os.WriteFile(path, []byte(`
+metrics:
+  http:
+    public:
+      address: file:8080
+`), 0o600))
+
+	newFlags := func(args ...string) *flag.FlagSet {
+		flags := flag.NewFlagSet("test", flag.ContinueOnError)
+		flags.String("config", "", "")
+		flags.String("a", "", "")
+		require.NoError(t, flags.Parse(args))
+
+		return flags
+	}
+
+	tests := []struct {
+		name    string
+		flags   *flag.FlagSet
+		environ []string
+		want    string
+	}{
+		{name: "file only", want: "file:8080"},
+		{name: "unset flag keeps file value", flags: newFlags(), want: "file:8080"},
+		{name: "flag over file", flags: newFlags("-a", "flag:8081"), want: "flag:8081"},
+		{
+			name:    "environment over flag",
+			flags:   newFlags("-a", "flag:8081"),
+			environ: []string{"ADDRESS=env:8082", "OTHER=value"},
+			want:    "env:8082",
+		},
+		{
+			name:    "unrelated environment is ignored",
+			flags:   newFlags("-a", "flag:8081"),
+			environ: []string{"OTHER=value"},
+			want:    "flag:8081",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var opts []config.Option
+			if tt.flags != nil {
+				opts = append(opts, config.WithFlags(tt.flags))
+			}
+			if tt.environ != nil {
+				opts = append(opts, config.WithEnviron(tt.environ))
+			}
+
+			loadedConfig, err := config.NewConfig(path, noop.New(), opts...)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, loadedConfig.HTTPAddress())
+		})
+	}
 }
