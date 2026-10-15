@@ -1,11 +1,12 @@
 package metrics_test
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"errors"
 	"io"
 	"net/http"
-	"strings"
 	"testing"
 
 	adapter "github.com/parta4ok/yandex-metrics/agent/internal/adapter/metrics"
@@ -79,8 +80,12 @@ func TestClient_UpdateAgentData(t *testing.T) {
 					require.Equal(t, http.MethodPost, req.Method)
 					require.Equal(t, "/update", req.URL.Path)
 					require.Equal(t, "application/json", req.Header.Get("Content-Type"))
+					require.Equal(t, "gzip", req.Header.Get("Content-Encoding"))
+					require.Equal(t, "gzip", req.Header.Get("Accept-Encoding"))
 					if tt.wantBody != "" {
-						body, err := io.ReadAll(req.Body)
+						reader, err := gzip.NewReader(req.Body)
+						require.NoError(t, err)
+						body, err := io.ReadAll(reader)
 						require.NoError(t, err)
 						require.JSONEq(t, tt.wantBody, string(body))
 					}
@@ -88,10 +93,22 @@ func TestClient_UpdateAgentData(t *testing.T) {
 						return nil, tt.transport
 					}
 
+					header := make(http.Header)
+					var responseBody bytes.Buffer
+					if tt.statusCode == http.StatusOK {
+						header.Set("Content-Encoding", "gzip")
+						writer := gzip.NewWriter(&responseBody)
+						_, err := writer.Write([]byte(`{"id":"Alloc","type":"gauge","value":1}`))
+						require.NoError(t, err)
+						require.NoError(t, writer.Close())
+					} else {
+						responseBody.WriteString("response")
+					}
+
 					return &http.Response{
 						StatusCode: tt.statusCode,
-						Body:       io.NopCloser(strings.NewReader("response")),
-						Header:     make(http.Header),
+						Body:       io.NopCloser(&responseBody),
+						Header:     header,
 					}, nil
 				}),
 			}, noop.New())

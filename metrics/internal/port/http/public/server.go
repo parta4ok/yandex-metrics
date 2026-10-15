@@ -98,7 +98,7 @@ func NewServer(
 	}
 
 	router := chi.NewRouter()
-	router.Use(middleware.Logging(logger))
+	router.Use(middleware.Logging(logger), middleware.Compressing())
 	server.registerRoutes(router)
 	server.handler = router
 
