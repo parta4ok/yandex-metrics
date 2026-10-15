@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	applicationJsonHeader = "application/json"
+	applicationJSONHeader = "application/json"
 	textHTMLHeader        = "text/html"
 	contentEncodingHeader = "Content-Encoding"
 	contentLengthHeader   = "Content-Length"
@@ -47,7 +47,7 @@ func (c *compressorWriter) WriteHeader(status int) {
 	}
 
 	switch mType {
-	case applicationJsonHeader, textHTMLHeader:
+	case applicationJSONHeader, textHTMLHeader:
 		c.compressor = gzip.NewWriter(c.ResponseWriter)
 		c.Header().Add(contentEncodingHeader, gzipFormat)
 		c.Header().Del(contentLengthHeader)
