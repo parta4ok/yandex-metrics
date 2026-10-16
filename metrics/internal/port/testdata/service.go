@@ -71,12 +71,41 @@ func (mr *MockMetricServiceProviderMockRecorder) ListMetrics(ctx any) *gomock.Ca
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListMetrics", reflect.TypeOf((*MockMetricServiceProvider)(nil).ListMetrics), ctx)
 }
 
-// UpdateMetric mocks base method.
-func (m *MockMetricServiceProvider) UpdateMetric(ctx context.Context, metric *entities.Metric) error {
+// MakeBackup mocks base method.
+func (m *MockMetricServiceProvider) MakeBackup(ctx context.Context) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateMetric", ctx, metric)
+	ret := m.ctrl.Call(m, "MakeBackup", ctx)
 	ret0, _ := ret[0].(error)
 	return ret0
+}
+
+// MakeBackup indicates an expected call of MakeBackup.
+func (mr *MockMetricServiceProviderMockRecorder) MakeBackup(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MakeBackup", reflect.TypeOf((*MockMetricServiceProvider)(nil).MakeBackup), ctx)
+}
+
+// RestoreBackup mocks base method.
+func (m *MockMetricServiceProvider) RestoreBackup(ctx context.Context) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RestoreBackup", ctx)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RestoreBackup indicates an expected call of RestoreBackup.
+func (mr *MockMetricServiceProviderMockRecorder) RestoreBackup(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RestoreBackup", reflect.TypeOf((*MockMetricServiceProvider)(nil).RestoreBackup), ctx)
+}
+
+// UpdateMetric mocks base method.
+func (m *MockMetricServiceProvider) UpdateMetric(ctx context.Context, metric *entities.Metric) (*entities.Metric, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateMetric", ctx, metric)
+	ret0, _ := ret[0].(*entities.Metric)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // UpdateMetric indicates an expected call of UpdateMetric.

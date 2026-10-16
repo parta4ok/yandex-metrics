@@ -1,4 +1,8 @@
 metrics:
+  backup:
+    store_interval: 300s
+    file_storage_path: metrics-storage.json
+    restore: false
   application:
     graceful_shutdown_timeout: 5s
   http:

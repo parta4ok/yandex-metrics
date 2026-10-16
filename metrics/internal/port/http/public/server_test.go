@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/parta4ok/yandex-metrics/metrics/internal/entities"
@@ -52,12 +53,12 @@ func Test_ServerUpdateMetric_Success(t *testing.T) {
 	require.NoError(t, metric.Validate())
 
 	service.EXPECT().UpdateMetric(gomock.Any(), gomock.Any()).DoAndReturn(
-		func(_ context.Context, metric *entities.Metric) error {
+		func(_ context.Context, metric *entities.Metric) (*entities.Metric, error) {
 			require.Equal(t, entities.Counter, metric.MType())
 			require.Equal(t, id, metric.ID())
 			require.Equal(t, delta, *metric.Delta())
 
-			return nil
+			return metric, nil
 		})
 
 	server.ServeHTTP(resp, req)
@@ -74,7 +75,7 @@ func Test_ServerUpdateMetric_NotFound(t *testing.T) {
 	server, service := newTestServer(t)
 	service.EXPECT().
 		UpdateMetric(gomock.Any(), gomock.Any()).
-		Return(entities.ErrNotFound)
+		Return(nil, entities.ErrNotFound)
 
 	resp := httptest.NewRecorder()
 
@@ -89,7 +90,7 @@ func Test_ServerUpdateMetric_InvalidParam(t *testing.T) {
 	server, service := newTestServer(t)
 	service.EXPECT().
 		UpdateMetric(gomock.Any(), gomock.Any()).
-		Return(entities.ErrInvalidParam)
+		Return(nil, entities.ErrInvalidParam)
 
 	resp := httptest.NewRecorder()
 
@@ -104,7 +105,7 @@ func Test_ServerUpdateMetric_InternalError(t *testing.T) {
 	server, service := newTestServer(t)
 	service.EXPECT().
 		UpdateMetric(gomock.Any(), gomock.Any()).
-		Return(entities.ErrInternalError)
+		Return(nil, entities.ErrInternalError)
 
 	resp := httptest.NewRecorder()
 
@@ -172,7 +173,7 @@ func TestServerUpdateMetric_InvalidRequest(t *testing.T) {
 
 			server, service := newTestServer(t)
 			if tt.status == http.StatusOK {
-				service.EXPECT().UpdateMetric(gomock.Any(), gomock.Any()).Return(nil)
+				service.EXPECT().UpdateMetric(gomock.Any(), gomock.Any()).Return(nil, nil)
 			}
 
 			req := httptest.NewRequest(tt.method, tt.target, nil)
@@ -375,4 +376,104 @@ type serverConfig string
 
 func (c serverConfig) HTTPAddress() string {
 	return string(c)
+}
+
+func newJSONRequest(target string, body string, contentType string) *http.Request {
+	req := httptest.NewRequest(http.MethodPost, target, strings.NewReader(body))
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+
+	return req
+}
+
+func TestServerUpdateMetricJSON_ReturnsStoredMetric(t *testing.T) {
+	t.Parallel()
+
+	server, service := newTestServer(t)
+	service.EXPECT().
+		UpdateMetric(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, metric *entities.Metric) (*entities.Metric, error) {
+			require.Equal(t, "requests", metric.ID())
+			require.Equal(t, entities.Counter, metric.MType())
+			require.Equal(t, int64(2), *metric.Delta())
+
+			return newCounterMetric(t, "requests", 5), nil
+		})
+
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, newJSONRequest(
+		"/update",
+		`{"id":"requests","type":"counter","delta":2}`,
+		"application/json; charset=utf-8",
+	))
+
+	require.Equal(t, http.StatusOK, resp.Code)
+	require.Equal(t, "application/json", resp.Header().Get("Content-Type"))
+	require.JSONEq(t, `{"id":"requests","type":"counter","delta":5}`, resp.Body.String())
+}
+
+func TestServerUpdateMetricJSON_InvalidRequest(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		body        string
+		contentType string
+	}{
+		{name: "missing content type", body: `{"id":"a","type":"gauge","value":1}`},
+		{name: "text content type", body: `{"id":"a","type":"gauge","value":1}`, contentType: "text/plain"},
+		{name: "malformed body", body: `{"id":`, contentType: "application/json"},
+		{name: "unknown type", body: `{"id":"a","type":"unknown"}`, contentType: "application/json"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			server, _ := newTestServer(t)
+			resp := httptest.NewRecorder()
+			server.ServeHTTP(resp, newJSONRequest("/update", tt.body, tt.contentType))
+
+			require.Equal(t, http.StatusBadRequest, resp.Code)
+		})
+	}
+}
+
+func TestServerGetMetricJSON_ReturnsMetric(t *testing.T) {
+	t.Parallel()
+
+	server, service := newTestServer(t)
+	service.EXPECT().
+		GetMetric(gomock.Any(), "memory", entities.Gauge).
+		Return(newGaugeMetric(t, "memory", 1.5), nil)
+
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, newJSONRequest(
+		"/value",
+		`{"id":"memory","type":"gauge"}`,
+		"application/json",
+	))
+
+	require.Equal(t, http.StatusOK, resp.Code)
+	require.Equal(t, "application/json", resp.Header().Get("Content-Type"))
+	require.JSONEq(t, `{"id":"memory","type":"gauge","value":1.5}`, resp.Body.String())
+}
+
+func TestServerGetMetricJSON_NotFound(t *testing.T) {
+	t.Parallel()
+
+	server, service := newTestServer(t)
+	service.EXPECT().
+		GetMetric(gomock.Any(), "memory", entities.Gauge).
+		Return(nil, entities.ErrNotFound)
+
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, newJSONRequest(
+		"/value",
+		`{"id":"memory","type":"gauge"}`,
+		"application/json",
+	))
+
+	require.Equal(t, http.StatusNotFound, resp.Code)
 }
