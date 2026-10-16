@@ -9,5 +9,6 @@ type PublicHTTPServerConfig interface {
 
 type ConfigProvider interface {
 	toolkitconfig.GracefulStopConfig
+	toolkitconfig.BackupConfig
 	PublicHTTPServerConfig
 }

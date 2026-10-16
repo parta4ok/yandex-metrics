@@ -15,3 +15,9 @@ type TLSConfig interface {
 	TLSCertificateFile() string
 	TLSKeyFile() string
 }
+
+type BackupConfig interface {
+	StoreInterval() time.Duration
+	FileStoragePath() string
+	Restore() bool
+}

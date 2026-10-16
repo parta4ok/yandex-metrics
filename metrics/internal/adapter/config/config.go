@@ -2,6 +2,7 @@ package config
 
 import (
 	"flag"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,8 +24,28 @@ const (
 	publicHTTPTLSCertificateFileKey = "metrics.http.public.tls.certificate_file"
 	publicHTTPTLSKeyFileKey         = "metrics.http.public.tls.key_file"
 
-	addressFlag = "a"
-	addressEnv  = "ADDRESS"
+	storeIntervalKey   = "metrics.backup.store_interval"
+	fileStoragePathKey = "metrics.backup.file_storage_path"
+	restoreKey         = "metrics.backup.restore"
+
+	defaultStoreInterval   = 300 * time.Second
+	defaultFileStoragePath = "metrics-storage.json"
+	defaultRestore         = false
+)
+
+var (
+	flagKeys = map[string]string{
+		"a": publicHTTPAddressKey,
+		"i": storeIntervalKey,
+		"f": fileStoragePathKey,
+		"r": restoreKey,
+	}
+	envKeys = map[string]string{
+		"ADDRESS":           publicHTTPAddressKey,
+		"STORE_INTERVAL":    storeIntervalKey,
+		"FILE_STORAGE_PATH": fileStoragePathKey,
+		"RESTORE":           restoreKey,
+	}
 )
 
 type Config struct {
@@ -60,6 +81,9 @@ func NewConfig(filePath string, logger toolkitlogger.Logger, opts ...Option) (*C
 	}
 
 	config := koanf.New(".")
+	if err := setBackupDefaults(config); err != nil {
+		return nil, errors.Wrap(err, "new config. set defaults")
+	}
 	if err := config.Load(file.Provider(filePath), yaml.Parser()); err != nil {
 		return nil, errors.Wrap(err, "new config. load file")
 	}
@@ -86,10 +110,44 @@ func NewConfig(filePath string, logger toolkitlogger.Logger, opts ...Option) (*C
 		}
 	}
 
-	return &Config{
+	loaded := &Config{
 		Koanf:  config,
 		logger: logger,
-	}, nil
+	}
+	if err := loaded.validateBackup(); err != nil {
+		return nil, errors.Wrap(err, "new config. validate backup")
+	}
+
+	return loaded, nil
+}
+
+func setBackupDefaults(config *koanf.Koanf) error {
+	defaults := map[string]any{
+		storeIntervalKey:   defaultStoreInterval,
+		fileStoragePathKey: defaultFileStoragePath,
+		restoreKey:         defaultRestore,
+	}
+	for key, value := range defaults {
+		if err := config.Set(key, value); err != nil {
+			return errors.Wrapf(err, "set default %s", key)
+		}
+	}
+
+	return nil
+}
+
+func (c *Config) validateBackup() error {
+	if c.Duration(storeIntervalKey) < 0 {
+		return errors.Wrapf(entities.ErrInvalidParam, "%s must not be negative", storeIntervalKey)
+	}
+	if c.String(fileStoragePathKey) == "" {
+		return errors.Wrapf(entities.ErrInvalidParam, "%s must not be empty", fileStoragePathKey)
+	}
+	if _, ok := c.Get(restoreKey).(bool); !ok {
+		return errors.Wrapf(entities.ErrInvalidParam, "%s must be a boolean", restoreKey)
+	}
+
+	return nil
 }
 
 func (c *Config) HTTPAddress() string {
@@ -112,18 +170,53 @@ func (c *Config) TLSKeyFile() string {
 	return c.String(publicHTTPTLSKeyFileKey)
 }
 
+func (c *Config) StoreInterval() time.Duration {
+	return c.Duration(storeIntervalKey)
+}
+
+func (c *Config) FileStoragePath() string {
+	return c.String(fileStoragePathKey)
+}
+
+func (c *Config) Restore() bool {
+	return c.Bool(restoreKey)
+}
+
 func flagToKey(name, value string) (string, any) {
-	if name == addressFlag {
-		return publicHTTPAddressKey, value
+	key, ok := flagKeys[name]
+	if !ok {
+		return "", nil
 	}
 
-	return "", nil
+	return key, convertValue(key, value)
 }
 
 func envToKey(name, value string) (string, any) {
-	if strings.EqualFold(name, addressEnv) {
-		return publicHTTPAddressKey, value
+	key, ok := envKeys[strings.ToUpper(name)]
+	if !ok {
+		return "", nil
 	}
 
-	return "", nil
+	return key, convertValue(key, value)
+}
+
+func convertValue(key, value string) any {
+	switch key {
+	case storeIntervalKey:
+		seconds, err := strconv.Atoi(value)
+		if err != nil {
+			return -time.Second
+		}
+
+		return time.Duration(seconds) * time.Second
+	case restoreKey:
+		restore, err := strconv.ParseBool(value)
+		if err != nil {
+			return value
+		}
+
+		return restore
+	default:
+		return value
+	}
 }

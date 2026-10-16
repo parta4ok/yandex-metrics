@@ -10,6 +10,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/parta4ok/yandex-metrics/metrics/internal/adapter/config"
+	"github.com/parta4ok/yandex-metrics/metrics/internal/adapter/osfile"
 	"github.com/parta4ok/yandex-metrics/metrics/internal/adapter/storage/inmemory"
 	"github.com/parta4ok/yandex-metrics/metrics/internal/cases"
 	"github.com/parta4ok/yandex-metrics/metrics/internal/entities"
@@ -22,6 +23,7 @@ import (
 type Application struct {
 	ConfigProvider
 	storage       cases.MetricsStorage
+	backup        cases.BackupProvider
 	service       port.MetricServiceProvider
 	publicServer  StartStopper
 	startStoppers []StartStopper
@@ -64,6 +66,10 @@ func (app *Application) Run() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	if err := app.restoreBackup(ctx); err != nil {
+		return app.handleError(err)
+	}
+
 	if err := app.runStartStoppers(ctx); err != nil {
 		return app.handleError(err)
 	}
@@ -74,8 +80,14 @@ func (app *Application) Run() error {
 func (app *Application) build() error {
 	app.buildStorage()
 
+	if err := app.buildBackup(); err != nil {
+		return errors.Wrap(err, "build application. backup provider")
+	}
 	if err := app.buildService(); err != nil {
 		return errors.Wrap(err, "build application. metrics service")
+	}
+	if err := app.buildBackupMode(); err != nil {
+		return errors.Wrap(err, "build application. backup mode")
 	}
 	if err := app.buildServer(); err != nil {
 		return errors.Wrap(err, "build application. public HTTP server")
@@ -88,13 +100,58 @@ func (app *Application) buildStorage() {
 	app.storage = inmemory.NewStorage(app.logger)
 }
 
+func (app *Application) buildBackup() error {
+	backup, err := osfile.NewBackup(app.FileStoragePath(), app.logger)
+	if err != nil {
+		return errors.Wrap(err, "build backup provider")
+	}
+
+	app.backup = backup
+
+	return nil
+}
+
 func (app *Application) buildService() error {
-	service, err := cases.NewMetricsService(app.storage, app.logger)
+	service, err := cases.NewMetricsService(app.storage, app.backup, app.logger)
 	if err != nil {
 		return errors.Wrap(err, "build metrics service")
 	}
 
 	app.service = service
+
+	return nil
+}
+
+func (app *Application) buildBackupMode() error {
+	if app.StoreInterval() == 0 {
+		service, err := cases.NewSyncBackupDecorator(app.service, app.logger)
+		if err != nil {
+			return errors.Wrap(err, "build sync backup decorator")
+		}
+
+		app.service = service
+
+		return nil
+	}
+
+	ticker, err := NewBackupTicker(app.StoreInterval(), app.service, app.logger)
+	if err != nil {
+		return errors.Wrap(err, "build backup ticker")
+	}
+
+	app.startStoppers = append(app.startStoppers, ticker)
+
+	return nil
+}
+
+func (app *Application) restoreBackup(ctx context.Context) error {
+	if !app.Restore() {
+		return nil
+	}
+
+	if err := app.service.RestoreBackup(ctx); err != nil {
+		return errors.Wrap(err, "restore backup")
+	}
 
 	return nil
 }

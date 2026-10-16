@@ -11,12 +11,20 @@ import (
 
 type MetricsService struct {
 	storage MetricsStorage
+	backup  BackupProvider
 	logger  toolkitlogger.Logger
 }
 
-func NewMetricsService(storage MetricsStorage, logger toolkitlogger.Logger) (*MetricsService, error) {
+func NewMetricsService(
+	storage MetricsStorage,
+	backup BackupProvider,
+	logger toolkitlogger.Logger,
+) (*MetricsService, error) {
 	if storage == nil {
 		return nil, errors.Wrap(entities.ErrInvalidParam, "new metrics service. storage is nil")
+	}
+	if backup == nil {
+		return nil, errors.Wrap(entities.ErrInvalidParam, "new metrics service. backup provider is nil")
 	}
 	if logger == nil {
 		return nil, errors.Wrap(entities.ErrInvalidParam, "new metrics service. logger is nil")
@@ -24,6 +32,7 @@ func NewMetricsService(storage MetricsStorage, logger toolkitlogger.Logger) (*Me
 
 	return &MetricsService{
 		storage: storage,
+		backup:  backup,
 		logger:  logger,
 	}, nil
 }
@@ -68,4 +77,32 @@ func (s *MetricsService) ListMetrics(ctx context.Context) ([]*entities.Metric, e
 	}
 
 	return metrics, nil
+}
+
+func (s *MetricsService) MakeBackup(ctx context.Context) error {
+	metrics, err := s.storage.ListMetrics(ctx)
+	if err != nil {
+		return errors.Wrap(err, "make backup. list storage")
+	}
+
+	if err := s.backup.MakeBackup(ctx, metrics); err != nil {
+		return errors.Wrap(err, "make backup. save metrics")
+	}
+
+	return nil
+}
+
+func (s *MetricsService) RestoreBackup(ctx context.Context) error {
+	metrics, err := s.backup.RestoreBackup(ctx)
+	if err != nil {
+		return errors.Wrap(err, "restore backup. load metrics")
+	}
+
+	for _, metric := range metrics {
+		if _, err := s.UpdateMetric(ctx, metric); err != nil {
+			return errors.Wrap(err, "restore backup. update metric")
+		}
+	}
+
+	return nil
 }

@@ -12,4 +12,6 @@ type MetricServiceProvider interface {
 	UpdateMetric(ctx context.Context, metric *entities.Metric) (*entities.Metric, error)
 	GetMetric(ctx context.Context, id string, mType entities.MType) (*entities.Metric, error)
 	ListMetrics(ctx context.Context) ([]*entities.Metric, error)
+	MakeBackup(ctx context.Context) error
+	RestoreBackup(ctx context.Context) error
 }

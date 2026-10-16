@@ -26,6 +26,9 @@ func run(args []string) error {
 	flags := flag.NewFlagSet("metrics-server", flag.ContinueOnError)
 	configPath := flags.String("config", "", "path to the configuration file")
 	flags.String("a", "", "HTTP server address")
+	flags.Int("i", 300, "store interval in seconds, 0 makes backup synchronous")
+	flags.String("f", "metrics-storage.json", "path to the metrics backup file")
+	flags.Bool("r", false, "restore metrics from the backup file on start")
 	if err := flags.Parse(args); err != nil {
 		return errors.Wrap(err, "run metrics service. parse flags")
 	}
