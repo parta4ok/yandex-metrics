@@ -82,7 +82,7 @@ func Compressing() func(http.Handler) http.Handler {
 			recorder := newCompressorWriter(resp)
 			defer recorder.Close()
 			format := req.Header.Get(acceptEncodingHeader)
-			recorder.isCompressionRequired = strings.Contains(format, gzipFormat)
+			recorder.acceptEncoding(format)
 
 			requestCompressedFormat := req.Header.Get(contentEncodingHeader)
 			if requestCompressedFormat == gzipFormat {
@@ -99,5 +99,15 @@ func Compressing() func(http.Handler) http.Handler {
 			next.ServeHTTP(recorder, req)
 
 		})
+	}
+}
+
+func (c *compressorWriter) acceptEncoding(header string) {
+	for _, encoding := range strings.Split(header, ",") {
+		name, _, _ := strings.Cut(encoding, ";")
+		if strings.EqualFold(strings.TrimSpace(name), gzipFormat) {
+			c.isCompressionRequired = true
+			return
+		}
 	}
 }

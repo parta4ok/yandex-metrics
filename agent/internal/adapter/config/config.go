@@ -1,20 +1,16 @@
 package config
 
 import (
-	"flag"
+	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/knadh/koanf/parsers/yaml"
-	"github.com/knadh/koanf/providers/basicflag"
-	"github.com/knadh/koanf/providers/env/v2"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
 	"github.com/pkg/errors"
 
 	"github.com/parta4ok/yandex-metrics/agent/internal/entities"
-	toolkitlogger "github.com/parta4ok/yandex-metrics/toolkit/logger"
 )
 
 const (
@@ -23,98 +19,140 @@ const (
 	reportIntervalKey          = "agent.ticker.report_interval"
 	metricsHTTPAddressKey      = "agent.http.metrics.address"
 	metricsHTTPTimeoutKey      = "agent.http.metrics.timeout"
-)
 
-var (
-	flagKeys = map[string]string{
-		"a": metricsHTTPAddressKey,
-		"r": reportIntervalKey,
-		"p": pollIntervalKey,
-	}
-	envKeys = map[string]string{
-		"ADDRESS":         metricsHTTPAddressKey,
-		"REPORT_INTERVAL": reportIntervalKey,
-		"POLL_INTERVAL":   pollIntervalKey,
-	}
-	secondsKeys = map[string]struct{}{
-		reportIntervalKey: {},
-		pollIntervalKey:   {},
-	}
+	defaultGracefulShutdownTimeout = 5 * time.Second
+	defaultPollInterval            = 2 * time.Second
+	defaultReportInterval          = 10 * time.Second
+	defaultMetricsHTTPAddress      = "localhost:8080"
+	defaultMetricsHTTPTimeout      = 5 * time.Second
+
+	configPathEnv        = "METRIC_CONFIG_PATH"
+	defaultConfigPath    = "config/agent.yml"
+	defaultConfigExample = "config/agent.example.yml"
 )
 
 type Config struct {
-	*koanf.Koanf
-	logger toolkitlogger.Logger
+	settings *koanf.Koanf
 }
 
-type options struct {
-	flags   *flag.FlagSet
-	environ []string
-}
+func NewConfig(args []string, environ []string) (*Config, error) {
+	config := &Config{settings: koanf.New(".")}
 
-type Option func(*options)
-
-func WithFlags(flags *flag.FlagSet) Option {
-	return func(opts *options) {
-		opts.flags = flags
+	flags := newCLIFlags()
+	if err := flags.parse(args); err != nil {
+		return nil, errors.Wrap(err, "new config. parse flags")
 	}
-}
+	env := newEnviron(environ)
 
-func WithEnviron(environ []string) Option {
-	return func(opts *options) {
-		opts.environ = environ
+	if err := config.setDefaults(); err != nil {
+		return nil, errors.Wrap(err, "new config. set defaults")
 	}
-}
-
-func NewConfig(filePath string, logger toolkitlogger.Logger, opts ...Option) (*Config, error) {
-	if filePath == "" {
-		return nil, errors.Wrap(entities.ErrInvalidParam, "new config. file path is empty")
-	}
-	if logger == nil {
-		return nil, errors.Wrap(entities.ErrInvalidParam, "new config. logger is nil")
-	}
-
-	config := koanf.New(".")
-	if err := config.Load(file.Provider(filePath), yaml.Parser()); err != nil {
+	if err := config.loadFile(config.resolvePath(flags, env)); err != nil {
 		return nil, errors.Wrap(err, "new config. load file")
 	}
-
-	var options options
-	for _, opt := range opts {
-		opt(&options)
+	if err := config.applyFlags(flags); err != nil {
+		return nil, errors.Wrap(err, "new config. apply flags")
+	}
+	if err := config.applyEnviron(env); err != nil {
+		return nil, errors.Wrap(err, "new config. apply environment")
+	}
+	if err := config.validate(); err != nil {
+		return nil, errors.Wrap(err, "new config. validate")
 	}
 
-	if options.flags != nil {
-		flagProvider := basicflag.ProviderWithValue(options.flags, ".", flagToKey, config)
-		if err := config.Load(flagProvider, nil); err != nil {
-			return nil, errors.Wrap(err, "new config. load flags")
-		}
-	}
-
-	if options.environ != nil {
-		envProvider := env.Provider(".", env.Opt{
-			TransformFunc: envToKey,
-			EnvironFunc:   func() []string { return options.environ },
-		})
-		if err := config.Load(envProvider, nil); err != nil {
-			return nil, errors.Wrap(err, "new config. load environment")
-		}
-	}
-
-	loaded := &Config{
-		Koanf:  config,
-		logger: logger,
-	}
-	if err := loaded.validateIntervals(); err != nil {
-		return nil, errors.Wrap(err, "new config. validate intervals")
-	}
-
-	return loaded, nil
+	return config, nil
 }
 
-func (c *Config) validateIntervals() error {
+func (c *Config) setDefaults() error {
+	defaults := map[string]any{
+		gracefulShutdownTimeoutKey: defaultGracefulShutdownTimeout,
+		pollIntervalKey:            defaultPollInterval,
+		reportIntervalKey:          defaultReportInterval,
+		metricsHTTPAddressKey:      defaultMetricsHTTPAddress,
+		metricsHTTPTimeoutKey:      defaultMetricsHTTPTimeout,
+	}
+	for key, value := range defaults {
+		if err := c.set(key, value); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (c *Config) resolvePath(flags *cliFlags, env environ) string {
+	if flags.configPath != "" {
+		return flags.configPath
+	}
+	if path, ok := env.lookup(configPathEnv); ok && path != "" {
+		return path
+	}
+	if _, err := os.Stat(defaultConfigPath); os.IsNotExist(err) {
+		return defaultConfigExample
+	}
+
+	return defaultConfigPath
+}
+
+func (c *Config) loadFile(path string) error {
+	if err := c.settings.Load(file.Provider(path), yaml.Parser()); err != nil {
+		return errors.Wrapf(err, "load %s", path)
+	}
+
+	return nil
+}
+
+func (c *Config) applyFlags(flags *cliFlags) error {
+	if flags.isSet(addressFlag) {
+		if err := c.set(metricsHTTPAddressKey, flags.address); err != nil {
+			return err
+		}
+	}
+	if flags.isSet(reportIntervalFlag) {
+		if err := c.set(reportIntervalKey, time.Duration(flags.reportInterval)*time.Second); err != nil {
+			return err
+		}
+	}
+	if flags.isSet(pollIntervalFlag) {
+		if err := c.set(pollIntervalKey, time.Duration(flags.pollInterval)*time.Second); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (c *Config) applyEnviron(env environ) error {
+	if address, ok := env.lookup(addressEnv); ok {
+		if err := c.set(metricsHTTPAddressKey, address); err != nil {
+			return err
+		}
+	}
+	if value, ok := env.lookup(reportIntervalEnv); ok {
+		interval, err := c.parseDuration(value)
+		if err != nil {
+			return errors.Wrapf(err, "%s", reportIntervalEnv)
+		}
+		if err := c.set(reportIntervalKey, interval); err != nil {
+			return err
+		}
+	}
+	if value, ok := env.lookup(pollIntervalEnv); ok {
+		interval, err := c.parseDuration(value)
+		if err != nil {
+			return errors.Wrapf(err, "%s", pollIntervalEnv)
+		}
+		if err := c.set(pollIntervalKey, interval); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (c *Config) validate() error {
 	for _, key := range []string{pollIntervalKey, reportIntervalKey} {
-		if c.Duration(key) <= 0 {
+		if c.settings.Duration(key) <= 0 {
 			return errors.Wrapf(entities.ErrInvalidParam, "%s must be a positive duration", key)
 		}
 	}
@@ -122,53 +160,39 @@ func (c *Config) validateIntervals() error {
 	return nil
 }
 
+func (c *Config) parseDuration(seconds string) (time.Duration, error) {
+	value, err := strconv.Atoi(seconds)
+	if err != nil {
+		return 0, errors.Wrap(entities.ErrInvalidParam, "parse duration. value is not a whole number of seconds")
+	}
+
+	return time.Duration(value) * time.Second, nil
+}
+
+func (c *Config) set(key string, value any) error {
+	if err := c.settings.Set(key, value); err != nil {
+		return errors.Wrapf(err, "set %s", key)
+	}
+
+	return nil
+}
+
 func (c *Config) GracefulShutdownTimeout() time.Duration {
-	return c.Duration(gracefulShutdownTimeoutKey)
+	return c.settings.Duration(gracefulShutdownTimeoutKey)
 }
 
 func (c *Config) PollInterval() time.Duration {
-	return c.Duration(pollIntervalKey)
+	return c.settings.Duration(pollIntervalKey)
 }
 
 func (c *Config) ReportInterval() time.Duration {
-	return c.Duration(reportIntervalKey)
+	return c.settings.Duration(reportIntervalKey)
 }
 
 func (c *Config) MetricsHTTPAddress() string {
-	return c.String(metricsHTTPAddressKey)
+	return c.settings.String(metricsHTTPAddressKey)
 }
 
 func (c *Config) MetricsHTTPTimeout() time.Duration {
-	return c.Duration(metricsHTTPTimeoutKey)
-}
-
-func flagToKey(name, value string) (string, any) {
-	key, ok := flagKeys[name]
-	if !ok {
-		return "", nil
-	}
-
-	return key, convertValue(key, value)
-}
-
-func envToKey(name, value string) (string, any) {
-	key, ok := envKeys[strings.ToUpper(name)]
-	if !ok {
-		return "", nil
-	}
-
-	return key, convertValue(key, value)
-}
-
-func convertValue(key, value string) any {
-	if _, ok := secondsKeys[key]; !ok {
-		return value
-	}
-
-	seconds, err := strconv.Atoi(value)
-	if err != nil {
-		return time.Duration(0)
-	}
-
-	return time.Duration(seconds) * time.Second
+	return c.settings.Duration(metricsHTTPTimeoutKey)
 }

@@ -1,26 +1,33 @@
 package config_test
 
 import (
-	"flag"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/parta4ok/yandex-metrics/metrics/internal/adapter/config"
 	"github.com/parta4ok/yandex-metrics/metrics/internal/entities"
-	"github.com/parta4ok/yandex-metrics/toolkit/logger/noop"
-	"github.com/stretchr/testify/require"
 )
+
+func writeConfig(t *testing.T, content string) string {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "metrics.yml")
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+
+	return path
+}
 
 func TestNewConfig(t *testing.T) {
 	t.Parallel()
 
-	path := filepath.Join(t.TempDir(), "metrics.yml")
-	require.NoError(t, os.WriteFile(path, []byte(`
+	path := writeConfig(t, `
 metrics:
   application:
-    graceful_shutdown_timeout: 5s
+    graceful_shutdown_timeout: 7s
   http:
     public:
       address: :8080
@@ -28,154 +35,91 @@ metrics:
         enabled: true
         certificate_file: cert.pem
         key_file: key.pem
-`), 0o600))
+  backup:
+    store_interval: 10s
+    file_storage_path: file.json
+    restore: true
+`)
 
-	loadedConfig, err := config.NewConfig(path, noop.New())
+	loadedConfig, err := config.NewConfig([]string{"-config", path}, nil)
 	require.NoError(t, err)
 	require.Equal(t, ":8080", loadedConfig.HTTPAddress())
-	require.Equal(t, 5*time.Second, loadedConfig.GracefulShutdownTimeout())
+	require.Equal(t, 7*time.Second, loadedConfig.GracefulShutdownTimeout())
 	require.True(t, loadedConfig.TLSEnabled())
 	require.Equal(t, "cert.pem", loadedConfig.TLSCertificateFile())
 	require.Equal(t, "key.pem", loadedConfig.TLSKeyFile())
+	require.Equal(t, 10*time.Second, loadedConfig.StoreInterval())
+	require.Equal(t, "file.json", loadedConfig.FileStoragePath())
+	require.True(t, loadedConfig.Restore())
 }
 
-func TestNewConfig_InvalidPath(t *testing.T) {
+func TestNewConfig_Defaults(t *testing.T) {
 	t.Parallel()
 
-	loadedConfig, err := config.NewConfig("", noop.New())
-	require.ErrorIs(t, err, entities.ErrInvalidParam)
-	require.Nil(t, loadedConfig)
+	path := writeConfig(t, "metrics: {}\n")
 
-	loadedConfig, err = config.NewConfig(filepath.Join(t.TempDir(), "missing.yml"), noop.New())
-	require.Error(t, err)
-	require.Nil(t, loadedConfig)
-}
-
-func TestNewConfig_AddressPriority(t *testing.T) {
-	t.Parallel()
-
-	path := filepath.Join(t.TempDir(), "metrics.yml")
-	require.NoError(t, os.WriteFile(path, []byte(`
-metrics:
-  http:
-    public:
-      address: file:8080
-`), 0o600))
-
-	newFlags := func(args ...string) *flag.FlagSet {
-		flags := flag.NewFlagSet("test", flag.ContinueOnError)
-		flags.String("config", "", "")
-		flags.String("a", "", "")
-		require.NoError(t, flags.Parse(args))
-
-		return flags
-	}
-
-	tests := []struct {
-		name    string
-		flags   *flag.FlagSet
-		environ []string
-		want    string
-	}{
-		{name: "file only", want: "file:8080"},
-		{name: "unset flag keeps file value", flags: newFlags(), want: "file:8080"},
-		{name: "flag over file", flags: newFlags("-a", "flag:8081"), want: "flag:8081"},
-		{
-			name:    "environment over flag",
-			flags:   newFlags("-a", "flag:8081"),
-			environ: []string{"ADDRESS=env:8082", "OTHER=value"},
-			want:    "env:8082",
-		},
-		{
-			name:    "unrelated environment is ignored",
-			flags:   newFlags("-a", "flag:8081"),
-			environ: []string{"OTHER=value"},
-			want:    "flag:8081",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			var opts []config.Option
-			if tt.flags != nil {
-				opts = append(opts, config.WithFlags(tt.flags))
-			}
-			if tt.environ != nil {
-				opts = append(opts, config.WithEnviron(tt.environ))
-			}
-
-			loadedConfig, err := config.NewConfig(path, noop.New(), opts...)
-			require.NoError(t, err)
-			require.Equal(t, tt.want, loadedConfig.HTTPAddress())
-		})
-	}
-}
-
-func TestNewConfig_BackupDefaults(t *testing.T) {
-	t.Parallel()
-
-	path := filepath.Join(t.TempDir(), "metrics.yml")
-	require.NoError(t, os.WriteFile(path, []byte("metrics: {}\n"), 0o600))
-
-	loadedConfig, err := config.NewConfig(path, noop.New())
+	loadedConfig, err := config.NewConfig([]string{"-config", path}, nil)
 	require.NoError(t, err)
+	require.Equal(t, "localhost:8080", loadedConfig.HTTPAddress())
+	require.Equal(t, 5*time.Second, loadedConfig.GracefulShutdownTimeout())
+	require.False(t, loadedConfig.TLSEnabled())
 	require.Equal(t, 300*time.Second, loadedConfig.StoreInterval())
 	require.Equal(t, "metrics-storage.json", loadedConfig.FileStoragePath())
 	require.False(t, loadedConfig.Restore())
 }
 
-func TestNewConfig_BackupPriority(t *testing.T) {
+func TestNewConfig_Priority(t *testing.T) {
 	t.Parallel()
 
-	path := filepath.Join(t.TempDir(), "metrics.yml")
-	require.NoError(t, os.WriteFile(path, []byte(`
+	path := writeConfig(t, `
 metrics:
+  http:
+    public:
+      address: file:8080
   backup:
     store_interval: 10s
     file_storage_path: file.json
     restore: true
-`), 0o600))
-
-	newFlags := func(args ...string) *flag.FlagSet {
-		flags := flag.NewFlagSet("test", flag.ContinueOnError)
-		flags.Int("i", 300, "")
-		flags.String("f", "metrics-storage.json", "")
-		flags.Bool("r", false, "")
-		require.NoError(t, flags.Parse(args))
-
-		return flags
-	}
+`)
 
 	tests := []struct {
 		name         string
-		flags        *flag.FlagSet
+		args         []string
 		environ      []string
+		wantAddress  string
 		wantInterval time.Duration
 		wantPath     string
 		wantRestore  bool
 	}{
-		{name: "file only", wantInterval: 10 * time.Second, wantPath: "file.json", wantRestore: true},
 		{
-			name:         "unset flags keep file values",
-			flags:        newFlags(),
+			name:         "file over defaults",
+			wantAddress:  "file:8080",
 			wantInterval: 10 * time.Second,
 			wantPath:     "file.json",
 			wantRestore:  true,
 		},
 		{
 			name:         "flags over file, zero interval and false restore",
-			flags:        newFlags("-i", "0", "-f", "flag.json", "-r=false"),
+			args:         []string{"-a", "flag:8081", "-i", "0", "-f", "flag.json", "-r=false"},
+			wantAddress:  "flag:8081",
 			wantInterval: 0,
 			wantPath:     "flag.json",
 		},
 		{
 			name:         "environment over flags",
-			flags:        newFlags("-i", "0", "-f", "flag.json", "-r=false"),
-			environ:      []string{"STORE_INTERVAL=5", "FILE_STORAGE_PATH=env.json", "RESTORE=true"},
+			args:         []string{"-a", "flag:8081", "-i", "0", "-f", "flag.json", "-r=false"},
+			environ:      []string{"ADDRESS=env:8082", "STORE_INTERVAL=5", "FILE_STORAGE_PATH=env.json", "RESTORE=true"},
+			wantAddress:  "env:8082",
 			wantInterval: 5 * time.Second,
 			wantPath:     "env.json",
+			wantRestore:  true,
+		},
+		{
+			name:         "unrelated environment is ignored",
+			environ:      []string{"OTHER=value"},
+			wantAddress:  "file:8080",
+			wantInterval: 10 * time.Second,
+			wantPath:     "file.json",
 			wantRestore:  true,
 		},
 	}
@@ -184,16 +128,9 @@ metrics:
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			var opts []config.Option
-			if tt.flags != nil {
-				opts = append(opts, config.WithFlags(tt.flags))
-			}
-			if tt.environ != nil {
-				opts = append(opts, config.WithEnviron(tt.environ))
-			}
-
-			loadedConfig, err := config.NewConfig(path, noop.New(), opts...)
+			loadedConfig, err := config.NewConfig(append([]string{"-config", path}, tt.args...), tt.environ)
 			require.NoError(t, err)
+			require.Equal(t, tt.wantAddress, loadedConfig.HTTPAddress())
 			require.Equal(t, tt.wantInterval, loadedConfig.StoreInterval())
 			require.Equal(t, tt.wantPath, loadedConfig.FileStoragePath())
 			require.Equal(t, tt.wantRestore, loadedConfig.Restore())
@@ -201,19 +138,66 @@ metrics:
 	}
 }
 
-func TestNewConfig_InvalidBackupEnvironment(t *testing.T) {
+func TestNewConfig_ConfigPath(t *testing.T) {
 	t.Parallel()
 
-	path := filepath.Join(t.TempDir(), "metrics.yml")
-	require.NoError(t, os.WriteFile(path, []byte("metrics: {}\n"), 0o600))
+	flagPath := writeConfig(t, "metrics:\n  http:\n    public:\n      address: flag-file:1\n")
+	envPath := writeConfig(t, "metrics:\n  http:\n    public:\n      address: env-file:2\n")
 
-	for _, environ := range [][]string{
-		{"STORE_INTERVAL=abc"},
-		{"STORE_INTERVAL=-1"},
-		{"RESTORE=maybe"},
-	} {
-		loadedConfig, err := config.NewConfig(path, noop.New(), config.WithEnviron(environ))
-		require.ErrorIs(t, err, entities.ErrInvalidParam, environ)
-		require.Nil(t, loadedConfig)
+	loadedConfig, err := config.NewConfig(
+		[]string{"-config", flagPath},
+		[]string{"METRIC_CONFIG_PATH=" + envPath},
+	)
+	require.NoError(t, err)
+	require.Equal(t, "flag-file:1", loadedConfig.HTTPAddress())
+
+	loadedConfig, err = config.NewConfig(nil, []string{"METRIC_CONFIG_PATH=" + envPath})
+	require.NoError(t, err)
+	require.Equal(t, "env-file:2", loadedConfig.HTTPAddress())
+
+	loadedConfig, err = config.NewConfig(
+		[]string{"-config", filepath.Join(t.TempDir(), "missing.yml")},
+		nil,
+	)
+	require.Error(t, err)
+	require.Nil(t, loadedConfig)
+}
+
+func TestNewConfig_InvalidValues(t *testing.T) {
+	t.Parallel()
+
+	path := writeConfig(t, "metrics: {}\n")
+	brokenPath := writeConfig(t, "metrics:\n  backup:\n    restore: maybe\n")
+
+	tests := []struct {
+		name    string
+		args    []string
+		environ []string
+	}{
+		{name: "env interval is not a number", environ: []string{"STORE_INTERVAL=abc"}},
+		{name: "env interval is negative", environ: []string{"STORE_INTERVAL=-1"}},
+		{name: "env interval is empty", environ: []string{"STORE_INTERVAL="}},
+		{name: "env restore is not a boolean", environ: []string{"RESTORE=maybe"}},
+		{name: "flag interval is not a number", args: []string{"-i", "abc"}},
+		{name: "flag interval is negative", args: []string{"-i", "-1"}},
+		{name: "flag restore is not a boolean", args: []string{"-r=maybe"}},
+		{name: "unknown flag", args: []string{"-x"}},
+		{name: "unexpected argument", args: []string{"extra"}},
+		{name: "file restore is not a boolean", args: []string{"-config", brokenPath}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			args := tt.args
+			if args == nil || args[0] != "-config" {
+				args = append([]string{"-config", path}, args...)
+			}
+
+			loadedConfig, err := config.NewConfig(args, tt.environ)
+			require.ErrorIs(t, err, entities.ErrInvalidParam)
+			require.Nil(t, loadedConfig)
+		})
 	}
 }

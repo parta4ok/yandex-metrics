@@ -31,6 +31,7 @@ AGENTS.md
 SKILLS.md
 INCREMENTS.md
 REVIEWS.md
+SCHEDULE.md
 
 # Local runtime configuration
 config/agent.yml

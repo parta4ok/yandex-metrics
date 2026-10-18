@@ -30,15 +30,15 @@ type Application struct {
 	logger        toolkitlogger.Logger
 }
 
-func New(configPath string, opts ...Option) (*Application, error) {
+func New(args []string, environ []string) (*Application, error) {
+	config, err := config.NewConfig(args, environ)
+	if err != nil {
+		return nil, errors.Wrap(err, "new application. load config")
+	}
+
 	logger, err := zaplog.New()
 	if err != nil {
 		return nil, errors.Wrap(err, "new application. create logger")
-	}
-
-	config, err := config.NewConfig(configPath, logger, opts...)
-	if err != nil {
-		return nil, errors.Wrap(err, "new application. load config")
 	}
 
 	return newApplication(config, logger)

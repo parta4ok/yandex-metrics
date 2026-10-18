@@ -44,6 +44,23 @@ func TestCompressing_CompressesResponse(t *testing.T) {
 			wantCompressed: true,
 		},
 		{
+			name: "gzip in a list with quality value, any case",
+			handler: func(resp http.ResponseWriter, _ *http.Request) {
+				resp.Header().Set("Content-Type", "application/json")
+				_, _ = resp.Write([]byte(body))
+			},
+			acceptEncoding: "br, GZIP;q=0.8",
+			wantCompressed: true,
+		},
+		{
+			name: "similar encoding names are not gzip",
+			handler: func(resp http.ResponseWriter, _ *http.Request) {
+				resp.Header().Set("Content-Type", "application/json")
+				_, _ = resp.Write([]byte(body))
+			},
+			acceptEncoding: "x-gzip, gzipx",
+		},
+		{
 			name: "client does not accept gzip",
 			handler: func(resp http.ResponseWriter, _ *http.Request) {
 				resp.Header().Set("Content-Type", "application/json")

@@ -10,35 +10,35 @@ import (
 	toolkitlogger "github.com/parta4ok/yandex-metrics/toolkit/logger"
 )
 
-type Backuper interface {
+type BackupMaker interface {
 	MakeBackup(ctx context.Context) error
 }
 
 type BackupTicker struct {
-	interval time.Duration
-	backuper Backuper
-	logger   toolkitlogger.Logger
+	interval    time.Duration
+	backupMaker BackupMaker
+	logger      toolkitlogger.Logger
 }
 
 func NewBackupTicker(
 	interval time.Duration,
-	backuper Backuper,
+	backupMaker BackupMaker,
 	logger toolkitlogger.Logger,
 ) (*BackupTicker, error) {
 	if interval <= 0 {
 		return nil, errors.Wrap(entities.ErrInvalidParam, "new backup ticker. interval is not positive")
 	}
-	if backuper == nil {
-		return nil, errors.Wrap(entities.ErrInvalidParam, "new backup ticker. backuper is nil")
+	if backupMaker == nil {
+		return nil, errors.Wrap(entities.ErrInvalidParam, "new backup ticker. backup maker is nil")
 	}
 	if logger == nil {
 		return nil, errors.Wrap(entities.ErrInvalidParam, "new backup ticker. logger is nil")
 	}
 
 	return &BackupTicker{
-		interval: interval,
-		backuper: backuper,
-		logger:   logger,
+		interval:    interval,
+		backupMaker: backupMaker,
+		logger:      logger,
 	}, nil
 }
 
@@ -49,7 +49,7 @@ func (t *BackupTicker) Start(ctx context.Context) error {
 	for {
 		select {
 		case <-ticker.C:
-			if err := t.backuper.MakeBackup(ctx); err != nil {
+			if err := t.backupMaker.MakeBackup(ctx); err != nil {
 				t.logger.Warn("backup ticker. make backup failed", "error", err)
 			}
 		case <-ctx.Done():
@@ -59,7 +59,7 @@ func (t *BackupTicker) Start(ctx context.Context) error {
 }
 
 func (t *BackupTicker) Stop(ctx context.Context) error {
-	if err := t.backuper.MakeBackup(ctx); err != nil {
+	if err := t.backupMaker.MakeBackup(ctx); err != nil {
 		return errors.Wrap(err, "stop backup ticker. make final backup")
 	}
 

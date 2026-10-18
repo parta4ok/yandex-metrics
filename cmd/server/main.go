@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"log"
 	"os"
 
@@ -10,56 +9,17 @@ import (
 	"github.com/parta4ok/yandex-metrics/metrics/pkg/application"
 )
 
-const (
-	configPathEnv        = "METRIC_CONFIG_PATH"
-	defaultConfigPath    = "config/metrics.yml"
-	defaultConfigExample = "config/metrics.example.yml"
-)
-
 func main() {
-	if err := run(os.Args[1:]); err != nil {
+	if err := run(os.Args[1:], os.Environ()); err != nil {
 		log.Fatalf("%+v", err)
 	}
 }
 
-func run(args []string) error {
-	flags := flag.NewFlagSet("metrics-server", flag.ContinueOnError)
-	configPath := flags.String("config", "", "path to the configuration file")
-	flags.String("a", "", "HTTP server address")
-	flags.Int("i", 300, "store interval in seconds, 0 makes backup synchronous")
-	flags.String("f", "metrics-storage.json", "path to the metrics backup file")
-	flags.Bool("r", false, "restore metrics from the backup file on start")
-	if err := flags.Parse(args); err != nil {
-		return errors.Wrap(err, "run metrics service. parse flags")
-	}
-	if flags.NArg() != 0 {
-		return errors.Errorf("run metrics service. unexpected argument: %s", flags.Arg(0))
-	}
-
-	app, err := application.New(
-		resolveConfigPath(*configPath),
-		application.WithFlags(flags),
-		application.WithEnviron(os.Environ()),
-	)
+func run(args []string, environ []string) error {
+	app, err := application.New(args, environ)
 	if err != nil {
 		return errors.Wrap(err, "run metrics service. create application")
 	}
 
 	return app.Run()
-}
-
-func resolveConfigPath(configPath string) string {
-	if configPath != "" {
-		return configPath
-	}
-
-	if configPath := os.Getenv(configPathEnv); configPath != "" {
-		return configPath
-	}
-
-	if _, err := os.Stat(defaultConfigPath); os.IsNotExist(err) {
-		return defaultConfigExample
-	}
-
-	return defaultConfigPath
 }
