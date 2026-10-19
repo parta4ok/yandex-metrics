@@ -31,7 +31,11 @@ AGENTS.md
 SKILLS.md
 INCREMENTS.md
 REVIEWS.md
+SCHEDULE.md
 
 # Local runtime configuration
 config/agent.yml
 config/metrics.yml
+
+# Local metrics backup
+metrics-storage.json

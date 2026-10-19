@@ -16,14 +16,15 @@ func TestStorage_UpdateMetric(t *testing.T) {
 
 	storage := inmemory.NewStorage(noop.New())
 	counter := newCounter(t, "requests", 2)
-	require.NoError(t, storage.UpdateMetric(context.Background(), counter))
-	require.NoError(t, storage.UpdateMetric(context.Background(), newCounter(t, "requests", 3)))
+	mustUpdate(t, storage, counter)
+	stored := mustUpdate(t, storage, newCounter(t, "requests", 3))
 
 	require.Equal(t, int64(2), *counter.Delta())
+	require.Equal(t, int64(5), *stored.Delta())
 
 	gauge := newGauge(t, "temperature", 1.5)
-	require.NoError(t, storage.UpdateMetric(context.Background(), gauge))
-	require.NoError(t, storage.UpdateMetric(context.Background(), newGauge(t, "temperature", 3.5)))
+	mustUpdate(t, storage, gauge)
+	mustUpdate(t, storage, newGauge(t, "temperature", 3.5))
 }
 
 func TestStorage_UpdateMetric_CancelledContext(t *testing.T) {
@@ -32,7 +33,7 @@ func TestStorage_UpdateMetric_CancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := inmemory.NewStorage(noop.New()).UpdateMetric(ctx, newCounter(t, "requests", 1))
+	_, err := inmemory.NewStorage(noop.New()).UpdateMetric(ctx, newCounter(t, "requests", 1))
 	require.ErrorIs(t, err, context.Canceled)
 }
 
@@ -40,9 +41,9 @@ func TestStorage_GetMetricAndListMetrics(t *testing.T) {
 	t.Parallel()
 
 	storage := inmemory.NewStorage(noop.New())
-	require.NoError(t, storage.UpdateMetric(context.Background(), newCounter(t, "requests", 2)))
-	require.NoError(t, storage.UpdateMetric(context.Background(), newCounter(t, "requests", 3)))
-	require.NoError(t, storage.UpdateMetric(context.Background(), newGauge(t, "memory", 1.5)))
+	mustUpdate(t, storage, newCounter(t, "requests", 2))
+	mustUpdate(t, storage, newCounter(t, "requests", 3))
+	mustUpdate(t, storage, newGauge(t, "memory", 1.5))
 
 	metric, err := storage.GetMetric(context.Background(), "requests", entities.Counter)
 	require.NoError(t, err)
@@ -89,8 +90,8 @@ func TestStorage_ReadEmptyAndSameNameDifferentTypes(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, metrics)
 
-	require.NoError(t, storage.UpdateMetric(context.Background(), newCounter(t, "requests", 2)))
-	require.NoError(t, storage.UpdateMetric(context.Background(), newGauge(t, "requests", 1.5)))
+	mustUpdate(t, storage, newCounter(t, "requests", 2))
+	mustUpdate(t, storage, newGauge(t, "requests", 1.5))
 
 	counter, err := storage.GetMetric(context.Background(), "requests", entities.Counter)
 	require.NoError(t, err)
@@ -117,7 +118,8 @@ func TestStorage_AccumulatesCounterConcurrently(t *testing.T) {
 	for _, update := range updatesToStore {
 		update := update
 		group.Go(func() {
-			errs <- storage.UpdateMetric(context.Background(), update)
+			_, err := storage.UpdateMetric(context.Background(), update)
+			errs <- err
 		})
 	}
 	group.Wait()
@@ -147,4 +149,13 @@ func newGauge(t *testing.T, id string, value float64) *entities.Metric {
 	require.NoError(t, err)
 	metric.SetValue(&value)
 	return metric
+}
+
+func mustUpdate(t *testing.T, storage *inmemory.Storage, metric *entities.Metric) *entities.Metric {
+	t.Helper()
+
+	stored, err := storage.UpdateMetric(context.Background(), metric)
+	require.NoError(t, err)
+
+	return stored
 }

@@ -17,7 +17,7 @@ import (
 	"github.com/parta4ok/yandex-metrics/agent/internal/cases"
 	"github.com/parta4ok/yandex-metrics/agent/internal/entities"
 	toolkitlogger "github.com/parta4ok/yandex-metrics/toolkit/logger"
-	"github.com/parta4ok/yandex-metrics/toolkit/logger/baseslog"
+	"github.com/parta4ok/yandex-metrics/toolkit/logger/zaplog"
 )
 
 type Application struct {
@@ -30,14 +30,18 @@ type Application struct {
 	logger              toolkitlogger.Logger
 }
 
-func New(configPath string, overrides Overrides) (*Application, error) {
-	logger := baseslog.New()
-	config, err := config.NewConfig(configPath, logger)
+func New(args []string, environ []string) (*Application, error) {
+	config, err := config.NewConfig(args, environ)
 	if err != nil {
 		return nil, errors.Wrap(err, "new application. load config")
 	}
 
-	return newApplication(resolveConfig(config, overrides), logger)
+	logger, err := zaplog.New()
+	if err != nil {
+		return nil, errors.Wrap(err, "new application. create logger")
+	}
+
+	return newApplication(config, logger)
 }
 
 func newApplication(config ConfigProvider, logger toolkitlogger.Logger) (*Application, error) {

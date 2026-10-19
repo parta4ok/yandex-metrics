@@ -42,7 +42,7 @@ func TestNewMetricsService(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			storage := tt.newStorage(ctrl)
 
-			service, err := cases.NewMetricsService(storage, noop.New())
+			service, err := cases.NewMetricsService(storage, testdata.NewMockBackupProvider(ctrl), noop.New())
 
 			if tt.wantErr != nil {
 				require.ErrorIs(t, err, tt.wantErr)
@@ -60,7 +60,11 @@ func TestNewMetricsService_NilLogger(t *testing.T) {
 	t.Parallel()
 
 	ctrl := gomock.NewController(t)
-	service, err := cases.NewMetricsService(testdata.NewMockMetricsStorage(ctrl), nil)
+	service, err := cases.NewMetricsService(
+		testdata.NewMockMetricsStorage(ctrl),
+		testdata.NewMockBackupProvider(ctrl),
+		nil,
+	)
 
 	require.ErrorIs(t, err, entities.ErrInvalidParam)
 	require.Nil(t, service)
@@ -86,7 +90,7 @@ func TestMetricsService_UpdateMetric(t *testing.T) {
 			setupStorage: func(storage *testdata.MockMetricsStorage) {
 				storage.EXPECT().
 					UpdateMetric(gomock.Any(), gomock.Any()).
-					Return(testdata.ErrTest)
+					Return(nil, testdata.ErrTest)
 			},
 		},
 		{
@@ -95,7 +99,7 @@ func TestMetricsService_UpdateMetric(t *testing.T) {
 			setupStorage: func(storage *testdata.MockMetricsStorage) {
 				storage.EXPECT().
 					UpdateMetric(gomock.Any(), gomock.Any()).
-					Return(nil)
+					Return(newCounterMetric(t, "requests", 1), nil)
 			},
 		},
 	}
@@ -106,14 +110,14 @@ func TestMetricsService_UpdateMetric(t *testing.T) {
 
 			ctrl := gomock.NewController(t)
 			storage := testdata.NewMockMetricsStorage(ctrl)
-			service, err := cases.NewMetricsService(storage, noop.New())
+			service, err := cases.NewMetricsService(storage, testdata.NewMockBackupProvider(ctrl), noop.New())
 			require.NoError(t, err)
 
 			if tt.setupStorage != nil {
 				tt.setupStorage(storage)
 			}
 
-			err = service.UpdateMetric(context.Background(), tt.metric)
+			_, err = service.UpdateMetric(context.Background(), tt.metric)
 
 			if tt.wantErr != nil {
 				require.ErrorIs(t, err, tt.wantErr)
@@ -175,7 +179,7 @@ func TestMetricsService_GetMetric(t *testing.T) {
 
 			ctrl := gomock.NewController(t)
 			storage := testdata.NewMockMetricsStorage(ctrl)
-			service, err := cases.NewMetricsService(storage, noop.New())
+			service, err := cases.NewMetricsService(storage, testdata.NewMockBackupProvider(ctrl), noop.New())
 			require.NoError(t, err)
 
 			if tt.setupStorage != nil {
@@ -229,7 +233,7 @@ func TestMetricsService_ListMetrics(t *testing.T) {
 
 			ctrl := gomock.NewController(t)
 			storage := testdata.NewMockMetricsStorage(ctrl)
-			service, err := cases.NewMetricsService(storage, noop.New())
+			service, err := cases.NewMetricsService(storage, testdata.NewMockBackupProvider(ctrl), noop.New())
 			require.NoError(t, err)
 
 			tt.setupStorage(storage)
@@ -257,4 +261,64 @@ func newCounterMetric(t *testing.T, id string, delta int64) *entities.Metric {
 	metric.SetDelta(&delta)
 
 	return metric
+}
+
+func TestMetricsService_MakeBackup(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	storage := testdata.NewMockMetricsStorage(ctrl)
+	backup := testdata.NewMockBackupProvider(ctrl)
+	service, err := cases.NewMetricsService(storage, backup, noop.New())
+	require.NoError(t, err)
+
+	metrics := []*entities.Metric{newCounterMetric(t, "requests", 5)}
+	storage.EXPECT().ListMetrics(gomock.Any()).Return(metrics, nil)
+	backup.EXPECT().MakeBackup(gomock.Any(), metrics).Return(nil)
+
+	require.NoError(t, service.MakeBackup(context.Background()))
+}
+
+func TestMetricsService_MakeBackup_StorageError(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	storage := testdata.NewMockMetricsStorage(ctrl)
+	service, err := cases.NewMetricsService(storage, testdata.NewMockBackupProvider(ctrl), noop.New())
+	require.NoError(t, err)
+
+	storage.EXPECT().ListMetrics(gomock.Any()).Return(nil, testdata.ErrTest)
+
+	require.ErrorIs(t, service.MakeBackup(context.Background()), testdata.ErrTest)
+}
+
+func TestMetricsService_RestoreBackup(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	storage := testdata.NewMockMetricsStorage(ctrl)
+	backup := testdata.NewMockBackupProvider(ctrl)
+	service, err := cases.NewMetricsService(storage, backup, noop.New())
+	require.NoError(t, err)
+
+	metric := newCounterMetric(t, "requests", 5)
+	backup.EXPECT().RestoreBackup(gomock.Any()).Return([]*entities.Metric{metric}, nil)
+	storage.EXPECT().UpdateMetric(gomock.Any(), metric).Return(metric, nil)
+
+	require.NoError(t, service.RestoreBackup(context.Background()))
+}
+
+func TestMetricsService_RestoreBackup_InvalidMetric(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	backup := testdata.NewMockBackupProvider(ctrl)
+	service, err := cases.NewMetricsService(testdata.NewMockMetricsStorage(ctrl), backup, noop.New())
+	require.NoError(t, err)
+
+	invalid, err := entities.NewMetric("requests", entities.Counter)
+	require.NoError(t, err)
+	backup.EXPECT().RestoreBackup(gomock.Any()).Return([]*entities.Metric{invalid}, nil)
+
+	require.ErrorIs(t, service.RestoreBackup(context.Background()), entities.ErrInvalidParam)
 }
