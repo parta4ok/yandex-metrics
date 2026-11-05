@@ -14,4 +14,5 @@ type MetricServiceProvider interface {
 	ListMetrics(ctx context.Context) ([]*entities.Metric, error)
 	MakeBackup(ctx context.Context) error
 	RestoreBackup(ctx context.Context) error
+	Ping(ctx context.Context) error
 }

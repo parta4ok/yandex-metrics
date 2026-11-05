@@ -12,18 +12,21 @@ import (
 	"github.com/parta4ok/yandex-metrics/metrics/internal/adapter/config"
 	"github.com/parta4ok/yandex-metrics/metrics/internal/adapter/osfile"
 	"github.com/parta4ok/yandex-metrics/metrics/internal/adapter/storage/inmemory"
+	"github.com/parta4ok/yandex-metrics/metrics/internal/adapter/storage/postgres"
 	"github.com/parta4ok/yandex-metrics/metrics/internal/cases"
 	"github.com/parta4ok/yandex-metrics/metrics/internal/entities"
 	"github.com/parta4ok/yandex-metrics/metrics/internal/port"
 	"github.com/parta4ok/yandex-metrics/metrics/internal/port/http/public"
 	toolkitlogger "github.com/parta4ok/yandex-metrics/toolkit/logger"
 	"github.com/parta4ok/yandex-metrics/toolkit/logger/zaplog"
+	nooppinger "github.com/parta4ok/yandex-metrics/toolkit/pinger/noop"
 )
 
 type Application struct {
 	ConfigProvider
 	storage       cases.MetricsStorage
 	backup        cases.BackupProvider
+	pinger        cases.Pinger
 	service       port.MetricServiceProvider
 	publicServer  StartStopper
 	startStoppers []StartStopper
@@ -80,6 +83,9 @@ func (app *Application) Run() error {
 func (app *Application) build() error {
 	app.buildStorage()
 
+	if err := app.buildPinger(); err != nil {
+		return errors.Wrap(err, "build application. pinger")
+	}
 	if err := app.buildBackup(); err != nil {
 		return errors.Wrap(err, "build application. backup provider")
 	}
@@ -100,6 +106,24 @@ func (app *Application) buildStorage() {
 	app.storage = inmemory.NewStorage(app.logger)
 }
 
+func (app *Application) buildPinger() error {
+	if app.DatabaseDSN() == "" {
+		app.pinger = nooppinger.New()
+
+		return nil
+	}
+
+	storage, err := postgres.NewStorage(app.DatabaseDSN())
+	if err != nil {
+		return errors.Wrap(err, "build pinger")
+	}
+
+	app.pinger = storage
+	app.startStoppers = append(app.startStoppers, storage)
+
+	return nil
+}
+
 func (app *Application) buildBackup() error {
 	backup, err := osfile.NewBackup(app.FileStoragePath(), app.logger)
 	if err != nil {
@@ -112,7 +136,7 @@ func (app *Application) buildBackup() error {
 }
 
 func (app *Application) buildService() error {
-	service, err := cases.NewMetricsService(app.storage, app.backup, app.logger)
+	service, err := cases.NewMetricsService(app.storage, app.backup, app.pinger, app.logger)
 	if err != nil {
 		return errors.Wrap(err, "build metrics service")
 	}
