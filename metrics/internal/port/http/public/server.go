@@ -20,6 +20,7 @@ import (
 	toolkitconfig "github.com/parta4ok/yandex-metrics/toolkit/config"
 	toolkitlogger "github.com/parta4ok/yandex-metrics/toolkit/logger"
 	"github.com/parta4ok/yandex-metrics/toolkit/middleware"
+	nooppinger "github.com/parta4ok/yandex-metrics/toolkit/pinger/noop"
 )
 
 const (
@@ -36,6 +37,7 @@ const (
 const (
 	updateBasePath = "/update"
 	valueBasePath  = "/value"
+	pingPath       = "/ping"
 )
 
 //go:embed templates/metrics.html
@@ -130,6 +132,7 @@ func (s *Server) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 
 func (s *Server) registerRoutes(router chi.Router) {
 	router.Get("/", s.listMetrics)
+	router.Get(pingPath, s.ping)
 	router.Route(updateBasePath, func(router chi.Router) {
 		router.Post("/", s.updateMetricJSON)
 		router.Post(
@@ -249,6 +252,15 @@ func (s *Server) listMetrics(resp http.ResponseWriter, req *http.Request) {
 	_, _ = resp.Write(body)
 }
 
+func (s *Server) ping(resp http.ResponseWriter, req *http.Request) {
+	if err := s.service.Ping(req.Context()); err != nil {
+		s.handleError(resp, err)
+		return
+	}
+
+	resp.WriteHeader(http.StatusOK)
+}
+
 func (s *Server) handleError(resp http.ResponseWriter, err error) {
 	status := http.StatusInternalServerError
 	switch {
@@ -256,9 +268,11 @@ func (s *Server) handleError(resp http.ResponseWriter, err error) {
 		status = http.StatusBadRequest
 	case errors.Is(err, entities.ErrNotFound):
 		status = http.StatusNotFound
+	case errors.Is(err, nooppinger.ErrNotConfigured):
+		status = http.StatusInternalServerError
 	}
 	if status == http.StatusInternalServerError {
-		s.logger.Warn("handle HTTP request error", "error", err)
+		s.logger.Error("handle HTTP request error", "error", err)
 	}
 
 	http.Error(resp, http.StatusText(status), status)

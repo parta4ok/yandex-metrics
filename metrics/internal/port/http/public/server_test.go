@@ -2,6 +2,7 @@ package public_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,7 @@ import (
 	"github.com/parta4ok/yandex-metrics/metrics/internal/port/http/public"
 	"github.com/parta4ok/yandex-metrics/metrics/internal/port/testdata"
 	"github.com/parta4ok/yandex-metrics/toolkit/logger/noop"
+	nooppinger "github.com/parta4ok/yandex-metrics/toolkit/pinger/noop"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
@@ -476,4 +478,35 @@ func TestServerGetMetricJSON_NotFound(t *testing.T) {
 	))
 
 	require.Equal(t, http.StatusNotFound, resp.Code)
+}
+
+func TestServerPing(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		pingErr    error
+		wantStatus int
+	}{
+		{name: "database is available", wantStatus: http.StatusOK},
+		{name: "pinger is not configured", pingErr: nooppinger.ErrNotConfigured, wantStatus: http.StatusInternalServerError},
+		{name: "database is unavailable", pingErr: errors.New("connection refused"), wantStatus: http.StatusInternalServerError},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			server, service := newTestServer(t)
+			service.EXPECT().Ping(gomock.Any()).Return(tt.pingErr)
+
+			resp := httptest.NewRecorder()
+			server.ServeHTTP(resp, httptest.NewRequest(http.MethodGet, "/ping", nil))
+
+			require.Equal(t, tt.wantStatus, resp.Code)
+			if tt.pingErr != nil {
+				require.NotContains(t, resp.Body.String(), tt.pingErr.Error())
+			}
+		})
+	}
 }
