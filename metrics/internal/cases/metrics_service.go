@@ -12,12 +12,14 @@ import (
 type MetricsService struct {
 	storage MetricsStorage
 	backup  BackupProvider
+	pinger  Pinger
 	logger  toolkitlogger.Logger
 }
 
 func NewMetricsService(
 	storage MetricsStorage,
 	backup BackupProvider,
+	pinger Pinger,
 	logger toolkitlogger.Logger,
 ) (*MetricsService, error) {
 	if storage == nil {
@@ -26,6 +28,9 @@ func NewMetricsService(
 	if backup == nil {
 		return nil, errors.Wrap(entities.ErrInvalidParam, "new metrics service. backup provider is nil")
 	}
+	if pinger == nil {
+		return nil, errors.Wrap(entities.ErrInvalidParam, "new metrics service. pinger is nil")
+	}
 	if logger == nil {
 		return nil, errors.Wrap(entities.ErrInvalidParam, "new metrics service. logger is nil")
 	}
@@ -33,6 +38,7 @@ func NewMetricsService(
 	return &MetricsService{
 		storage: storage,
 		backup:  backup,
+		pinger:  pinger,
 		logger:  logger,
 	}, nil
 }
@@ -102,6 +108,14 @@ func (s *MetricsService) RestoreBackup(ctx context.Context) error {
 		if _, err := s.UpdateMetric(ctx, metric); err != nil {
 			return errors.Wrap(err, "restore backup. update metric")
 		}
+	}
+
+	return nil
+}
+
+func (s *MetricsService) Ping(ctx context.Context) error {
+	if err := s.pinger.Ping(ctx); err != nil {
+		return errors.Wrap(err, "ping. ping storage")
 	}
 
 	return nil
