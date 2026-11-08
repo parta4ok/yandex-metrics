@@ -50,6 +50,18 @@ func newRequest(t *testing.T, ctx context.Context, payload string) *http.Request
 	return req
 }
 
+func doRequest(t *testing.T, client *retry.Client, req *http.Request) (int, error) {
+	t.Helper()
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	return resp.StatusCode, nil
+}
+
 func newClient(t *testing.T, doer retry.Doer) *retry.Client {
 	t.Helper()
 
@@ -79,10 +91,10 @@ func TestClient_Do_SuccessWithoutRetry(t *testing.T) {
 		return resp, nil
 	}))
 
-	resp, err := client.Do(newRequest(t, context.Background(), "payload"))
+	status, err := doRequest(t, client, newRequest(t, context.Background(), "payload"))
 
 	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, http.StatusOK, status)
 	require.Equal(t, 1, calls)
 }
 
@@ -113,10 +125,10 @@ func TestClient_Do_RetriesServiceUnavailable(t *testing.T) {
 		return resp, nil
 	}))
 
-	resp, err := client.Do(newRequest(t, context.Background(), "payload"))
+	status, err := doRequest(t, client, newRequest(t, context.Background(), "payload"))
 
 	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, http.StatusOK, status)
 	require.Equal(t, 3, calls)
 	require.Equal(t, []string{"payload", "payload", "payload"}, bodies)
 	require.True(t, first.closed)
@@ -136,10 +148,10 @@ func TestClient_Do_ExhaustedServiceUnavailable(t *testing.T) {
 	}))
 
 	started := time.Now()
-	resp, err := client.Do(newRequest(t, context.Background(), "payload"))
+	status, err := doRequest(t, client, newRequest(t, context.Background(), "payload"))
 
 	require.Error(t, err)
-	require.Nil(t, resp)
+	require.Zero(t, status)
 	require.Equal(t, 4, calls)
 	require.GreaterOrEqual(t, time.Since(started), 60*time.Millisecond)
 	for _, body := range bodies {
@@ -174,10 +186,10 @@ func TestClient_Do_RetriesConnectionErrors(t *testing.T) {
 				return resp, nil
 			}))
 
-			resp, err := client.Do(newRequest(t, context.Background(), "payload"))
+			status, err := doRequest(t, client, newRequest(t, context.Background(), "payload"))
 
 			require.NoError(t, err)
-			require.Equal(t, http.StatusOK, resp.StatusCode)
+			require.Equal(t, http.StatusOK, status)
 			require.Equal(t, 2, calls)
 		})
 	}
@@ -194,10 +206,10 @@ func TestClient_Do_ConnectionErrorExhausted(t *testing.T) {
 		return nil, connectionErr
 	}))
 
-	resp, err := client.Do(newRequest(t, context.Background(), "payload"))
+	status, err := doRequest(t, client, newRequest(t, context.Background(), "payload"))
 
 	require.ErrorIs(t, err, syscall.ECONNREFUSED)
-	require.Nil(t, resp)
+	require.Zero(t, status)
 	require.Equal(t, 4, calls)
 }
 
@@ -230,7 +242,7 @@ func TestClient_Do_DoesNotRetry(t *testing.T) {
 				return resp, nil
 			}))
 
-			resp, err := client.Do(newRequest(t, context.Background(), "payload"))
+			status, err := doRequest(t, client, newRequest(t, context.Background(), "payload"))
 
 			require.Equal(t, 1, calls)
 			if tt.err != nil {
@@ -238,7 +250,7 @@ func TestClient_Do_DoesNotRetry(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			require.Equal(t, tt.status, resp.StatusCode)
+			require.Equal(t, tt.status, status)
 		})
 	}
 }
@@ -262,10 +274,10 @@ func TestClient_Do_StopsWhenContextIsCancelled(t *testing.T) {
 	require.NoError(t, err)
 
 	started := time.Now()
-	resp, err := client.Do(newRequest(t, ctx, "payload"))
+	status, err := doRequest(t, client, newRequest(t, ctx, "payload"))
 
 	require.ErrorIs(t, err, context.Canceled)
-	require.Nil(t, resp)
+	require.Zero(t, status)
 	require.Equal(t, 1, calls)
 	require.Less(t, time.Since(started), time.Second)
 }
@@ -293,10 +305,10 @@ func TestClient_Do_InterruptsWaitOnCancel(t *testing.T) {
 	require.NoError(t, err)
 
 	started := time.Now()
-	resp, err := client.Do(newRequest(t, ctx, "payload"))
+	status, err := doRequest(t, client, newRequest(t, ctx, "payload"))
 
 	require.ErrorIs(t, err, context.DeadlineExceeded)
-	require.Nil(t, resp)
+	require.Zero(t, status)
 	require.True(t, body.closed)
 	require.Equal(t, 1, calls)
 	require.Less(t, time.Since(started), time.Second)
@@ -317,10 +329,10 @@ func TestClient_Do_DoesNotRetryNonReplayableBody(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, req.GetBody)
 
-	resp, err := client.Do(req)
+	status, err := doRequest(t, client, req)
 
 	require.NoError(t, err)
-	require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+	require.Equal(t, http.StatusServiceUnavailable, status)
 	require.Equal(t, 1, calls)
 }
 
@@ -347,11 +359,10 @@ func TestClient_Do_WithHTTPClient(t *testing.T) {
 	req, err := http.NewRequest(http.MethodPost, server.URL, bytes.NewBufferString("payload"))
 	require.NoError(t, err)
 
-	resp, err := client.Do(req)
+	status, err := doRequest(t, client, req)
 
 	require.NoError(t, err)
-	defer resp.Body.Close()
-	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, http.StatusOK, status)
 	require.Equal(t, int32(3), calls.Load())
 	for range 3 {
 		require.Equal(t, "payload", <-bodies)
@@ -369,10 +380,10 @@ func TestClient_Do_ServerIsDown(t *testing.T) {
 	req, err := http.NewRequest(http.MethodPost, address, bytes.NewBufferString("payload"))
 	require.NoError(t, err)
 
-	resp, err := client.Do(req)
+	status, err := doRequest(t, client, req)
 
 	require.Error(t, err)
-	require.Nil(t, resp)
+	require.Zero(t, status)
 	var netErr net.Error
 	require.ErrorAs(t, err, &netErr)
 }
