@@ -549,30 +549,6 @@ func TestServerUpdateMetricsJSON_ReturnsStoredMetrics(t *testing.T) {
 	)
 }
 
-func TestServerUpdateMetricsJSON_BothPaths(t *testing.T) {
-	t.Parallel()
-
-	for _, path := range []string{"/updates", "/updates/"} {
-		t.Run(path, func(t *testing.T) {
-			t.Parallel()
-
-			server, service := newTestServer(t)
-			service.EXPECT().
-				UpdateMetrics(gomock.Any(), gomock.Any()).
-				Return([]*entities.Metric{newCounterMetric(t, "requests", 2)}, nil)
-
-			resp := httptest.NewRecorder()
-			server.ServeHTTP(resp, newJSONRequest(
-				path,
-				`[{"id":"requests","type":"counter","delta":2}]`,
-				"application/json",
-			))
-
-			require.Equal(t, http.StatusOK, resp.Code)
-		})
-	}
-}
-
 func TestServerUpdateMetricsJSON_Gzip(t *testing.T) {
 	t.Parallel()
 

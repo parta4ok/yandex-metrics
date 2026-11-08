@@ -186,7 +186,7 @@ func TestClient_UpdateAgentDataBatch(t *testing.T) {
 				Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 					called = true
 					require.Equal(t, http.MethodPost, req.Method)
-					require.Equal(t, "/updates", req.URL.Path)
+					require.Equal(t, "/updates/", req.URL.Path)
 					require.Equal(t, "application/json", req.Header.Get("Content-Type"))
 					require.Equal(t, "gzip", req.Header.Get("Content-Encoding"))
 					require.Equal(t, "gzip", req.Header.Get("Accept-Encoding"))

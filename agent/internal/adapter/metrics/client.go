@@ -24,7 +24,7 @@ const (
 	jsonMediaType         = "application/json"
 	gzipEncoding          = "gzip"
 	updatePath            = "update"
-	updatesPath           = "updates"
+	updatesPath           = "updates/"
 )
 
 var _ cases.MetricServiceClient = (*Client)(nil)

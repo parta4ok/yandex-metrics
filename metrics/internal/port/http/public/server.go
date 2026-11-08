@@ -38,7 +38,7 @@ const (
 	updateBasePath = "/update"
 	valueBasePath  = "/value"
 	pingPath       = "/ping"
-	updatesPath    = "/updates"
+	updatesPath    = "/updates/"
 )
 
 //go:embed templates/metrics.html
@@ -135,7 +135,6 @@ func (s *Server) registerRoutes(router chi.Router) {
 	router.Get("/", s.listMetrics)
 	router.Get(pingPath, s.ping)
 	router.Post(updatesPath, s.updateMetricsJSON)
-	router.Post(updatesPath+"/", s.updateMetricsJSON)
 	router.Route(updateBasePath, func(router chi.Router) {
 		router.Post("/", s.updateMetricJSON)
 		router.Post(
