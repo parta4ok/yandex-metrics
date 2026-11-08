@@ -15,6 +15,7 @@ import (
 	"github.com/parta4ok/yandex-metrics/agent/internal/cases"
 	"github.com/parta4ok/yandex-metrics/agent/internal/entities"
 	toolkitlogger "github.com/parta4ok/yandex-metrics/toolkit/logger"
+	"github.com/parta4ok/yandex-metrics/toolkit/retry"
 )
 
 const (
@@ -31,13 +32,13 @@ var _ cases.MetricServiceClient = (*Client)(nil)
 
 type Client struct {
 	serverAddress string
-	client        *http.Client
+	client        retry.Doer
 	logger        toolkitlogger.Logger
 }
 
 func NewClient(
 	serverAddress string,
-	client *http.Client,
+	client retry.Doer,
 	logger toolkitlogger.Logger,
 ) (*Client, error) {
 	if serverAddress == "" {

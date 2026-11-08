@@ -7,11 +7,15 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	adapter "github.com/parta4ok/yandex-metrics/agent/internal/adapter/metrics"
 	"github.com/parta4ok/yandex-metrics/agent/internal/entities"
 	"github.com/parta4ok/yandex-metrics/toolkit/logger/noop"
+	"github.com/parta4ok/yandex-metrics/toolkit/retry"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,7 +26,7 @@ func TestNewClient(t *testing.T) {
 	tests := []struct {
 		name      string
 		address   string
-		client    *http.Client
+		client    retry.Doer
 		wantError error
 	}{
 		{name: "empty address", client: httpClient, wantError: entities.ErrInvalidParam},
@@ -251,4 +255,51 @@ type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (fn roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return fn(req)
+}
+
+func TestClient_UpdateAgentDataBatch_RetriesServiceUnavailable(t *testing.T) {
+	t.Parallel()
+
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
+		reader, err := gzip.NewReader(req.Body)
+		require.NoError(t, err)
+		body, err := io.ReadAll(reader)
+		require.NoError(t, err)
+		require.JSONEq(t, `[{"id":"Alloc","type":"gauge","value":1.5}]`, string(body))
+
+		if calls.Add(1) < 3 {
+			http.Error(resp, "unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		resp.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	retryClient, err := retry.NewClient(server.Client(), retry.WithDelays(time.Millisecond, time.Millisecond, time.Millisecond))
+	require.NoError(t, err)
+	client, err := adapter.NewClient(server.URL, retryClient, noop.New())
+	require.NoError(t, err)
+
+	err = client.UpdateAgentDataBatch(context.Background(), []*entities.Metric{gaugeMetric(t, 1.5)})
+
+	require.NoError(t, err)
+	require.Equal(t, int32(3), calls.Load())
+}
+
+func TestClient_UpdateAgentDataBatch_ServerIsDown(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.NotFoundHandler())
+	address := server.URL
+	server.Close()
+
+	retryClient, err := retry.NewClient(&http.Client{}, retry.WithDelays(time.Millisecond, time.Millisecond, time.Millisecond))
+	require.NoError(t, err)
+	client, err := adapter.NewClient(address, retryClient, noop.New())
+	require.NoError(t, err)
+
+	err = client.UpdateAgentDataBatch(context.Background(), []*entities.Metric{gaugeMetric(t, 1.5)})
+
+	require.Error(t, err)
 }
