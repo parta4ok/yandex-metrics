@@ -24,6 +24,7 @@ const (
 	jsonMediaType         = "application/json"
 	gzipEncoding          = "gzip"
 	updatePath            = "update"
+	updatesPath           = "updates/"
 )
 
 var _ cases.MetricServiceClient = (*Client)(nil)
@@ -75,24 +76,58 @@ func (c *Client) UpdateAgentData(ctx context.Context, metric *entities.Metric) e
 		return errors.Wrap(err, "update agent data. build request body")
 	}
 
-	body, err := json.Marshal(request)
+	if err := c.postJSON(ctx, updatePath, request); err != nil {
+		return errors.Wrap(err, "update agent data")
+	}
+
+	return nil
+}
+
+func (c *Client) UpdateAgentDataBatch(ctx context.Context, metrics []*entities.Metric) error {
+	if len(metrics) == 0 {
+		return errors.Wrap(entities.ErrNotFound, "update agent data batch. nothing to send")
+	}
+
+	requests := make([]*UpdateMetricRequestDTO, 0, len(metrics))
+	for _, metric := range metrics {
+		if metric == nil {
+			return errors.Wrap(entities.ErrInvalidParam, "update agent data batch. metric is nil")
+		}
+
+		request, err := c.newUpdateRequestDTO(metric)
+		if err != nil {
+			return errors.Wrap(err, "update agent data batch. build request body")
+		}
+
+		requests = append(requests, request)
+	}
+
+	if err := c.postJSON(ctx, updatesPath, requests); err != nil {
+		return errors.Wrap(err, "update agent data batch")
+	}
+
+	return nil
+}
+
+func (c *Client) postJSON(ctx context.Context, path string, payload any) error {
+	body, err := json.Marshal(payload)
 	if err != nil {
-		return errors.Wrap(err, "update agent data. marshal request body")
+		return errors.Wrap(err, "post json. marshal request body")
 	}
 
 	body, err = c.compress(body)
 	if err != nil {
-		return errors.Wrap(err, "update agent data. compress request body")
+		return errors.Wrap(err, "post json. compress request body")
 	}
 
 	req, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,
-		c.serverAddress+"/"+updatePath,
+		c.serverAddress+"/"+path,
 		bytes.NewReader(body),
 	)
 	if err != nil {
-		return errors.Wrap(err, "update agent data. create request")
+		return errors.Wrap(err, "post json. create request")
 	}
 	req.Header.Set(contentTypeHeader, jsonMediaType)
 	req.Header.Set(contentEncodingHeader, gzipEncoding)
@@ -100,13 +135,14 @@ func (c *Client) UpdateAgentData(ctx context.Context, metric *entities.Metric) e
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return errors.Wrap(err, "update agent data. send request")
+		return errors.Wrap(err, "post json. send request")
 	}
 	defer resp.Body.Close()
 
 	if err := c.drainResponseBody(resp); err != nil {
-		return errors.Wrap(err, "update agent data. read response body")
+		return errors.Wrap(err, "post json. read response body")
 	}
+
 	return c.handleResponseStatus(resp.StatusCode)
 }
 
@@ -148,15 +184,15 @@ func (c *Client) handleResponseStatus(statusCode int) error {
 	case http.StatusOK:
 		return nil
 	case http.StatusBadRequest:
-		return errors.Wrap(entities.ErrInvalidParam, "update agent data. bad request")
+		return errors.Wrap(entities.ErrInvalidParam, "response status. bad request")
 	case http.StatusNotFound:
-		return errors.Wrap(entities.ErrNotFound, "update agent data. metric not found")
+		return errors.Wrap(entities.ErrNotFound, "response status. not found")
 	case http.StatusInternalServerError:
-		return errors.Wrap(entities.ErrInternalError, "update agent data. internal server error")
+		return errors.Wrap(entities.ErrInternalError, "response status. internal server error")
 	default:
 		return errors.Wrapf(
 			entities.ErrInternalError,
-			"update agent data. unexpected response status: %d",
+			"response status. unexpected status: %d",
 			statusCode,
 		)
 	}

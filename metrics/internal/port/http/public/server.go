@@ -20,6 +20,7 @@ import (
 	toolkitconfig "github.com/parta4ok/yandex-metrics/toolkit/config"
 	toolkitlogger "github.com/parta4ok/yandex-metrics/toolkit/logger"
 	"github.com/parta4ok/yandex-metrics/toolkit/middleware"
+	nooppinger "github.com/parta4ok/yandex-metrics/toolkit/pinger/noop"
 )
 
 const (
@@ -36,6 +37,8 @@ const (
 const (
 	updateBasePath = "/update"
 	valueBasePath  = "/value"
+	pingPath       = "/ping"
+	updatesPath    = "/updates/"
 )
 
 //go:embed templates/metrics.html
@@ -130,6 +133,8 @@ func (s *Server) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 
 func (s *Server) registerRoutes(router chi.Router) {
 	router.Get("/", s.listMetrics)
+	router.Get(pingPath, s.ping)
+	router.Post(updatesPath, s.updateMetricsJSON)
 	router.Route(updateBasePath, func(router chi.Router) {
 		router.Post("/", s.updateMetricJSON)
 		router.Post(
@@ -193,6 +198,33 @@ func (s *Server) updateMetricJSON(resp http.ResponseWriter, req *http.Request) {
 	s.writeMetricJSON(resp, stored)
 }
 
+func (s *Server) updateMetricsJSON(resp http.ResponseWriter, req *http.Request) {
+	var requests []dto.UpdateMetricRequestDTO
+	if err := s.decodeJSON(req, &requests); err != nil {
+		s.handleError(resp, err)
+		return
+	}
+
+	metrics := make([]*entities.Metric, 0, len(requests))
+	for i := range requests {
+		metric, err := s.metricFromUpdateRequest(&requests[i])
+		if err != nil {
+			s.handleError(resp, err)
+			return
+		}
+
+		metrics = append(metrics, metric)
+	}
+
+	stored, err := s.service.UpdateMetrics(req.Context(), metrics)
+	if err != nil {
+		s.handleError(resp, err)
+		return
+	}
+
+	s.writeMetricsJSON(resp, stored)
+}
+
 func (s *Server) getMetricJSON(resp http.ResponseWriter, req *http.Request) {
 	var request dto.GetMetricRequestDTO
 	if err := s.decodeJSON(req, &request); err != nil {
@@ -249,6 +281,15 @@ func (s *Server) listMetrics(resp http.ResponseWriter, req *http.Request) {
 	_, _ = resp.Write(body)
 }
 
+func (s *Server) ping(resp http.ResponseWriter, req *http.Request) {
+	if err := s.service.Ping(req.Context()); err != nil {
+		s.handleError(resp, err)
+		return
+	}
+
+	resp.WriteHeader(http.StatusOK)
+}
+
 func (s *Server) handleError(resp http.ResponseWriter, err error) {
 	status := http.StatusInternalServerError
 	switch {
@@ -256,9 +297,11 @@ func (s *Server) handleError(resp http.ResponseWriter, err error) {
 		status = http.StatusBadRequest
 	case errors.Is(err, entities.ErrNotFound):
 		status = http.StatusNotFound
+	case errors.Is(err, nooppinger.ErrNotConfigured):
+		status = http.StatusInternalServerError
 	}
 	if status == http.StatusInternalServerError {
-		s.logger.Warn("handle HTTP request error", "error", err)
+		s.logger.Error("handle HTTP request error", "error", err)
 	}
 
 	http.Error(resp, http.StatusText(status), status)
@@ -281,6 +324,23 @@ func (s *Server) writeMetricJSON(resp http.ResponseWriter, metric *entities.Metr
 	body, err := json.Marshal(s.newMetricResponse(metric))
 	if err != nil {
 		s.handleError(resp, errors.Wrap(entities.ErrInternalError, "write metric json. marshal response"))
+		return
+	}
+
+	resp.Header().Set(contentTypeHeader, jsonMediaType)
+	resp.WriteHeader(http.StatusOK)
+	_, _ = resp.Write(body)
+}
+
+func (s *Server) writeMetricsJSON(resp http.ResponseWriter, metrics []*entities.Metric) {
+	responses := make([]dto.MetricResponseDTO, 0, len(metrics))
+	for _, metric := range metrics {
+		responses = append(responses, s.newMetricResponse(metric))
+	}
+
+	body, err := json.Marshal(responses)
+	if err != nil {
+		s.handleError(resp, errors.Wrap(entities.ErrInternalError, "write metrics json. marshal response"))
 		return
 	}
 

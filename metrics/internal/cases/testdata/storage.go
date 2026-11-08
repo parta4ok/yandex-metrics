@@ -85,3 +85,18 @@ func (mr *MockMetricsStorageMockRecorder) UpdateMetric(ctx, metric any) *gomock.
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateMetric", reflect.TypeOf((*MockMetricsStorage)(nil).UpdateMetric), ctx, metric)
 }
+
+// UpdateMetrics mocks base method.
+func (m *MockMetricsStorage) UpdateMetrics(ctx context.Context, metrics []*entities.Metric) ([]*entities.Metric, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateMetrics", ctx, metrics)
+	ret0, _ := ret[0].([]*entities.Metric)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UpdateMetrics indicates an expected call of UpdateMetrics.
+func (mr *MockMetricsStorageMockRecorder) UpdateMetrics(ctx, metrics any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateMetrics", reflect.TypeOf((*MockMetricsStorage)(nil).UpdateMetrics), ctx, metrics)
+}

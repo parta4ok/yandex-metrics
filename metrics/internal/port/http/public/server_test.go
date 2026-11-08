@@ -1,8 +1,12 @@
 package public_test
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,6 +16,7 @@ import (
 	"github.com/parta4ok/yandex-metrics/metrics/internal/port/http/public"
 	"github.com/parta4ok/yandex-metrics/metrics/internal/port/testdata"
 	"github.com/parta4ok/yandex-metrics/toolkit/logger/noop"
+	nooppinger "github.com/parta4ok/yandex-metrics/toolkit/pinger/noop"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
@@ -476,4 +481,165 @@ func TestServerGetMetricJSON_NotFound(t *testing.T) {
 	))
 
 	require.Equal(t, http.StatusNotFound, resp.Code)
+}
+
+func TestServerPing(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		pingErr    error
+		wantStatus int
+	}{
+		{name: "database is available", wantStatus: http.StatusOK},
+		{name: "pinger is not configured", pingErr: nooppinger.ErrNotConfigured, wantStatus: http.StatusInternalServerError},
+		{name: "database is unavailable", pingErr: errors.New("connection refused"), wantStatus: http.StatusInternalServerError},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			server, service := newTestServer(t)
+			service.EXPECT().Ping(gomock.Any()).Return(tt.pingErr)
+
+			resp := httptest.NewRecorder()
+			server.ServeHTTP(resp, httptest.NewRequest(http.MethodGet, "/ping", nil))
+
+			require.Equal(t, tt.wantStatus, resp.Code)
+			if tt.pingErr != nil {
+				require.NotContains(t, resp.Body.String(), tt.pingErr.Error())
+			}
+		})
+	}
+}
+
+func TestServerUpdateMetricsJSON_ReturnsStoredMetrics(t *testing.T) {
+	t.Parallel()
+
+	server, service := newTestServer(t)
+	service.EXPECT().
+		UpdateMetrics(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, metrics []*entities.Metric) ([]*entities.Metric, error) {
+			require.Len(t, metrics, 2)
+			require.Equal(t, "requests", metrics[0].ID())
+			require.Equal(t, int64(2), *metrics[0].Delta())
+			require.Equal(t, "memory", metrics[1].ID())
+			require.Equal(t, 1.5, *metrics[1].Value())
+
+			return []*entities.Metric{
+				newCounterMetric(t, "requests", 5),
+				newGaugeMetric(t, "memory", 1.5),
+			}, nil
+		})
+
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, newJSONRequest(
+		"/updates/",
+		`[{"id":"requests","type":"counter","delta":2},{"id":"memory","type":"gauge","value":1.5}]`,
+		"application/json",
+	))
+
+	require.Equal(t, http.StatusOK, resp.Code)
+	require.Equal(t, "application/json", resp.Header().Get("Content-Type"))
+	require.JSONEq(
+		t,
+		`[{"id":"requests","type":"counter","delta":5},{"id":"memory","type":"gauge","value":1.5}]`,
+		resp.Body.String(),
+	)
+}
+
+func TestServerUpdateMetricsJSON_Gzip(t *testing.T) {
+	t.Parallel()
+
+	server, service := newTestServer(t)
+	service.EXPECT().
+		UpdateMetrics(gomock.Any(), gomock.Any()).
+		Return([]*entities.Metric{newCounterMetric(t, "requests", 2)}, nil)
+
+	var compressed bytes.Buffer
+	writer := gzip.NewWriter(&compressed)
+	_, err := writer.Write([]byte(`[{"id":"requests","type":"counter","delta":2}]`))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	req := httptest.NewRequest(http.MethodPost, "/updates/", &compressed)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Encoding", "gzip")
+	req.Header.Set("Accept-Encoding", "gzip")
+
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+
+	require.Equal(t, http.StatusOK, resp.Code)
+	require.Equal(t, "gzip", resp.Header().Get("Content-Encoding"))
+
+	reader, err := gzip.NewReader(resp.Body)
+	require.NoError(t, err)
+	body, err := io.ReadAll(reader)
+	require.NoError(t, err)
+	require.JSONEq(t, `[{"id":"requests","type":"counter","delta":2}]`, string(body))
+}
+
+func TestServerUpdateMetricsJSON_InvalidRequest(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		body        string
+		contentType string
+	}{
+		{name: "missing content type", body: `[{"id":"a","type":"gauge","value":1}]`},
+		{name: "text content type", body: `[{"id":"a","type":"gauge","value":1}]`, contentType: "text/plain"},
+		{name: "malformed body", body: `[{"id":`, contentType: "application/json"},
+		{name: "object instead of array", body: `{"id":"a","type":"gauge","value":1}`, contentType: "application/json"},
+		{name: "unknown type", body: `[{"id":"a","type":"unknown"}]`, contentType: "application/json"},
+		{name: "empty id", body: `[{"id":"","type":"gauge","value":1}]`, contentType: "application/json"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			server, _ := newTestServer(t)
+			resp := httptest.NewRecorder()
+			server.ServeHTTP(resp, newJSONRequest("/updates/", tt.body, tt.contentType))
+
+			require.Equal(t, http.StatusBadRequest, resp.Code)
+		})
+	}
+}
+
+func TestServerUpdateMetricsJSON_ServiceErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		body       string
+		serviceErr error
+		wantStatus int
+	}{
+		{name: "empty batch", body: `[]`, serviceErr: entities.ErrInvalidParam, wantStatus: http.StatusBadRequest},
+		{name: "null batch", body: `null`, serviceErr: entities.ErrInvalidParam, wantStatus: http.StatusBadRequest},
+		{
+			name:       "internal error",
+			body:       `[{"id":"a","type":"gauge","value":1}]`,
+			serviceErr: entities.ErrInternalError,
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			server, service := newTestServer(t)
+			service.EXPECT().UpdateMetrics(gomock.Any(), gomock.Any()).Return(nil, tt.serviceErr)
+
+			resp := httptest.NewRecorder()
+			server.ServeHTTP(resp, newJSONRequest("/updates/", tt.body, "application/json"))
+
+			require.Equal(t, tt.wantStatus, resp.Code)
+		})
+	}
 }
