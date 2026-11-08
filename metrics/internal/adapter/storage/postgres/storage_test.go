@@ -3,6 +3,9 @@ package postgres_test
 import (
 	"context"
 	"errors"
+	"io"
+	"net"
+	"net/url"
 	"os"
 	"sync"
 	"testing"
@@ -282,7 +285,8 @@ func TestStorage_UpdateMetrics_RollsBackOnError(t *testing.T) {
 		newCounter(t, "requests", 1),
 		invalid,
 	})
-	require.Error(t, err)
+	require.ErrorIs(t, err, entities.ErrInternalError)
+	require.NotErrorIs(t, err, entities.ErrTemporary)
 
 	metrics, err := storage.ListMetrics(ctx)
 	require.NoError(t, err)
@@ -317,4 +321,165 @@ func TestStorage_UpdateMetrics_AccumulatesConcurrently(t *testing.T) {
 	errorsMetric, err := storage.GetMetric(ctx, "errors", entities.Counter)
 	require.NoError(t, err)
 	require.Equal(t, int64(2*workers), *errorsMetric.Delta())
+}
+
+type tcpProxy struct {
+	listener net.Listener
+	mu       sync.Mutex
+	conns    []net.Conn
+}
+
+func newTCPProxy(t *testing.T, target string) *tcpProxy {
+	t.Helper()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	proxy := &tcpProxy{listener: listener}
+	t.Cleanup(proxy.Close)
+
+	go proxy.serve(target)
+
+	return proxy
+}
+
+func (p *tcpProxy) Addr() string {
+	return p.listener.Addr().String()
+}
+
+func (p *tcpProxy) Close() {
+	_ = p.listener.Close()
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	for _, conn := range p.conns {
+		_ = conn.Close()
+	}
+}
+
+func (p *tcpProxy) serve(target string) {
+	for {
+		client, err := p.listener.Accept()
+		if err != nil {
+			return
+		}
+
+		server, err := net.Dial("tcp", target)
+		if err != nil {
+			_ = client.Close()
+			continue
+		}
+
+		p.mu.Lock()
+		p.conns = append(p.conns, client, server)
+		p.mu.Unlock()
+
+		go func() { _, _ = io.Copy(server, client) }()
+		go func() { _, _ = io.Copy(client, server) }()
+	}
+}
+
+func TestStorage_TemporaryErrorWhenDatabaseIsDown(t *testing.T) {
+	dsn := os.Getenv(testDSNEnv)
+	if dsn == "" {
+		t.Skipf("%s is not set", testDSNEnv)
+	}
+
+	ctx := context.Background()
+	real, err := url.Parse(dsn)
+	require.NoError(t, err)
+
+	newStorageThroughProxy := func(t *testing.T) (*postgres.Storage, *tcpProxy) {
+		t.Helper()
+
+		_ = newStorage(t)
+
+		proxy := newTCPProxy(t, real.Host)
+		proxied := *real
+		proxied.Host = proxy.Addr()
+
+		migrator, err := pgmigrator.NewMigrator(proxied.String())
+		require.NoError(t, err)
+		storage, err := postgres.NewStorage(ctx, proxied.String(), migrator)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = storage.Stop(ctx) })
+
+		return storage, proxy
+	}
+
+	tests := []struct {
+		name string
+		call func(storage *postgres.Storage) error
+	}{
+		{
+			name: "update metric",
+			call: func(storage *postgres.Storage) error {
+				_, err := storage.UpdateMetric(ctx, newCounter(t, "requests", 1))
+				return err
+			},
+		},
+		{
+			name: "update metrics",
+			call: func(storage *postgres.Storage) error {
+				_, err := storage.UpdateMetrics(ctx, []*entities.Metric{newCounter(t, "requests", 1)})
+				return err
+			},
+		},
+		{
+			name: "get metric",
+			call: func(storage *postgres.Storage) error {
+				_, err := storage.GetMetric(ctx, "requests", entities.Counter)
+				return err
+			},
+		},
+		{
+			name: "list metrics",
+			call: func(storage *postgres.Storage) error {
+				_, err := storage.ListMetrics(ctx)
+				return err
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			storage, proxy := newStorageThroughProxy(t)
+			proxy.Close()
+
+			err := tt.call(storage)
+
+			require.ErrorIs(t, err, entities.ErrTemporary, "got: %v", err)
+		})
+	}
+}
+
+func TestStorage_PingKeepsInternalErrorWhenDatabaseIsDown(t *testing.T) {
+	dsn := os.Getenv(testDSNEnv)
+	if dsn == "" {
+		t.Skipf("%s is not set", testDSNEnv)
+	}
+
+	ctx := context.Background()
+	real, err := url.Parse(dsn)
+	require.NoError(t, err)
+
+	_ = newStorage(t)
+
+	proxy := newTCPProxy(t, real.Host)
+	proxied := *real
+	proxied.Host = proxy.Addr()
+
+	migrator, err := pgmigrator.NewMigrator(proxied.String())
+	require.NoError(t, err)
+	storage, err := postgres.NewStorage(ctx, proxied.String(), migrator)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = storage.Stop(ctx) })
+
+	proxy.Close()
+
+	err = storage.Ping(ctx)
+
+	require.ErrorIs(t, err, entities.ErrInternalError)
+	require.NotErrorIs(t, err, entities.ErrTemporary)
 }

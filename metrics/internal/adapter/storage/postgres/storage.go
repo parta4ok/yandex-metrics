@@ -2,10 +2,14 @@ package postgres
 
 import (
 	"context"
+	"io"
+	"net"
 	"sync"
 	"time"
 
+	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pkg/errors"
 
@@ -142,7 +146,7 @@ func (s *Storage) UpdateMetric(ctx context.Context, metric *entities.Metric) (*e
 func (s *Storage) UpdateMetrics(ctx context.Context, metrics []*entities.Metric) ([]*entities.Metric, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return nil, errors.Wrapf(entities.ErrInternalError, "update metrics. begin transaction: %v", err)
+		return nil, s.databaseError("update metrics. begin transaction", err)
 	}
 	defer func() {
 		tx.Rollback(ctx)
@@ -159,7 +163,7 @@ func (s *Storage) UpdateMetrics(ctx context.Context, metrics []*entities.Metric)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return nil, errors.Wrapf(entities.ErrInternalError, "update metrics. commit transaction: %v", err)
+		return nil, s.databaseError("update metrics. commit transaction", err)
 	}
 
 	return stored, nil
@@ -197,7 +201,7 @@ func (s *Storage) GetMetric(ctx context.Context, id string, mType entities.MType
 func (s *Storage) ListMetrics(ctx context.Context) ([]*entities.Metric, error) {
 	rows, err := s.pool.Query(ctx, listMetricsQuery)
 	if err != nil {
-		return nil, errors.Wrapf(entities.ErrInternalError, "list metrics. select: %v", err)
+		return nil, s.databaseError("list metrics. select", err)
 	}
 	defer rows.Close()
 
@@ -211,7 +215,7 @@ func (s *Storage) ListMetrics(ctx context.Context) ([]*entities.Metric, error) {
 		metrics = append(metrics, metric)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, errors.Wrapf(entities.ErrInternalError, "list metrics. rows: %v", err)
+		return nil, s.databaseError("list metrics. rows", err)
 	}
 
 	return metrics, nil
@@ -231,7 +235,7 @@ func (s *Storage) scanMetric(row pgx.Row) (*entities.Metric, error) {
 			return nil, errors.Wrap(entities.ErrNotFound, "scan metric. metric not found")
 		}
 
-		return nil, errors.Wrapf(entities.ErrInternalError, "scan metric: %v", err)
+		return nil, s.databaseError("scan metric", err)
 	}
 
 	metric, err := entities.NewMetric(id, entities.MType(mType))
@@ -243,4 +247,31 @@ func (s *Storage) scanMetric(row pgx.Row) (*entities.Metric, error) {
 	metric.SetHash(hash)
 
 	return metric, nil
+}
+
+func (s *Storage) databaseError(operation string, err error) error {
+	if s.isTemporary(err) {
+		return errors.Wrapf(entities.ErrTemporary, "%s: %v", operation, err)
+	}
+
+	return errors.Wrapf(entities.ErrInternalError, "%s: %v", operation, err)
+}
+
+func (s *Storage) isTemporary(err error) bool {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgerrcode.IsConnectionException(pgErr.Code)
+	}
+
+	var connectErr *pgconn.ConnectError
+	if errors.As(err, &connectErr) {
+		return true
+	}
+
+	var netErr net.Error
+
+	return errors.Is(err, pgconn.ErrConnClosed) ||
+		errors.Is(err, io.EOF) ||
+		errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.As(err, &netErr)
 }
