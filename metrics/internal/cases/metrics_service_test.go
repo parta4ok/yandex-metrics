@@ -378,3 +378,123 @@ func TestMetricsService_Ping(t *testing.T) {
 		})
 	}
 }
+
+func newGaugeMetric(t *testing.T, id string, value float64) *entities.Metric {
+	t.Helper()
+
+	metric, err := entities.NewMetric(id, entities.Gauge)
+	require.NoError(t, err)
+
+	metric.SetValue(&value)
+
+	return metric
+}
+
+func newBatchService(t *testing.T) (*cases.MetricsService, *testdata.MockMetricsStorage) {
+	t.Helper()
+
+	ctrl := gomock.NewController(t)
+	storage := testdata.NewMockMetricsStorage(ctrl)
+
+	service, err := cases.NewMetricsService(
+		storage,
+		testdata.NewMockBackupProvider(ctrl),
+		testdata.NewMockPinger(ctrl),
+		noop.New(),
+	)
+	require.NoError(t, err)
+
+	return service, storage
+}
+
+func TestMetricsService_UpdateMetrics_MergesAndSorts(t *testing.T) {
+	t.Parallel()
+
+	service, storage := newBatchService(t)
+
+	var passed []*entities.Metric
+	storage.EXPECT().
+		UpdateMetrics(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, metrics []*entities.Metric) ([]*entities.Metric, error) {
+			passed = metrics
+
+			return metrics, nil
+		})
+
+	stored, err := service.UpdateMetrics(context.Background(), []*entities.Metric{
+		newGaugeMetric(t, "temperature", 1.5),
+		newCounterMetric(t, "requests", 2),
+		newGaugeMetric(t, "temperature", 3.5),
+		newCounterMetric(t, "requests", 3),
+		newGaugeMetric(t, "load", 0.5),
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, passed, stored)
+	require.Len(t, passed, 3)
+	require.Equal(t, "load", passed[0].ID())
+	require.Equal(t, "requests", passed[1].ID())
+	require.Equal(t, int64(5), *passed[1].Delta())
+	require.Equal(t, "temperature", passed[2].ID())
+	require.Equal(t, 3.5, *passed[2].Value())
+}
+
+func TestMetricsService_UpdateMetrics_DoesNotMutateInput(t *testing.T) {
+	t.Parallel()
+
+	service, storage := newBatchService(t)
+	storage.EXPECT().UpdateMetrics(gomock.Any(), gomock.Any()).Return(nil, nil)
+
+	first := newCounterMetric(t, "requests", 2)
+	_, err := service.UpdateMetrics(context.Background(), []*entities.Metric{
+		first,
+		newCounterMetric(t, "requests", 3),
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, int64(2), *first.Delta())
+}
+
+func TestMetricsService_UpdateMetrics_InvalidBatch(t *testing.T) {
+	t.Parallel()
+
+	invalid, err := entities.NewMetric("requests", entities.Counter)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name    string
+		metrics []*entities.Metric
+	}{
+		{name: "nil batch"},
+		{name: "empty batch", metrics: []*entities.Metric{}},
+		{name: "nil metric", metrics: []*entities.Metric{nil}},
+		{name: "counter without delta", metrics: []*entities.Metric{invalid}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			service, _ := newBatchService(t)
+
+			stored, err := service.UpdateMetrics(context.Background(), tt.metrics)
+
+			require.ErrorIs(t, err, entities.ErrInvalidParam)
+			require.Nil(t, stored)
+		})
+	}
+}
+
+func TestMetricsService_UpdateMetrics_StorageError(t *testing.T) {
+	t.Parallel()
+
+	service, storage := newBatchService(t)
+	storage.EXPECT().UpdateMetrics(gomock.Any(), gomock.Any()).Return(nil, entities.ErrInternalError)
+
+	stored, err := service.UpdateMetrics(context.Background(), []*entities.Metric{
+		newCounterMetric(t, "requests", 1),
+	})
+
+	require.ErrorIs(t, err, entities.ErrInternalError)
+	require.Nil(t, stored)
+}

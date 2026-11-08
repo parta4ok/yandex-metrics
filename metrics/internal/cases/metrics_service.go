@@ -2,6 +2,7 @@ package cases
 
 import (
 	"context"
+	"sort"
 
 	"github.com/pkg/errors"
 
@@ -54,6 +55,33 @@ func (s *MetricsService) UpdateMetric(
 	stored, err := s.storage.UpdateMetric(ctx, metric)
 	if err != nil {
 		return nil, errors.Wrap(err, "update metric. update storage")
+	}
+
+	return stored, nil
+}
+
+func (s *MetricsService) UpdateMetrics(
+	ctx context.Context,
+	metrics []*entities.Metric,
+) ([]*entities.Metric, error) {
+	if len(metrics) == 0 {
+		return nil, errors.Wrap(entities.ErrInvalidParam, "update metrics. batch is empty")
+	}
+
+	for _, metric := range metrics {
+		if err := metric.Validate(); err != nil {
+			return nil, errors.Wrap(err, "update metrics. validate metric")
+		}
+	}
+
+	merged, err := s.mergeMetrics(metrics)
+	if err != nil {
+		return nil, errors.Wrap(err, "update metrics. merge metrics")
+	}
+
+	stored, err := s.storage.UpdateMetrics(ctx, merged)
+	if err != nil {
+		return nil, errors.Wrap(err, "update metrics. update storage")
 	}
 
 	return stored, nil
@@ -119,4 +147,49 @@ func (s *MetricsService) Ping(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (s *MetricsService) mergeMetrics(metrics []*entities.Metric) ([]*entities.Metric, error) {
+	type metricKey struct {
+		id    string
+		mType entities.MType
+	}
+
+	merged := make(map[metricKey]*entities.Metric, len(metrics))
+	for _, metric := range metrics {
+		key := metricKey{id: metric.ID(), mType: metric.MType()}
+
+		current, ok := merged[key]
+		if ok && metric.MType() == entities.Counter {
+			delta := *current.Delta() + *metric.Delta()
+			current.SetDelta(&delta)
+			current.SetHash(metric.Hash())
+
+			continue
+		}
+
+		metricCopy, err := entities.NewMetric(metric.ID(), metric.MType())
+		if err != nil {
+			return nil, errors.Wrap(err, "merge metrics. create metric")
+		}
+		metricCopy.SetDelta(metric.Delta())
+		metricCopy.SetValue(metric.Value())
+		metricCopy.SetHash(metric.Hash())
+
+		merged[key] = metricCopy
+	}
+
+	result := make([]*entities.Metric, 0, len(merged))
+	for _, metric := range merged {
+		result = append(result, metric)
+	}
+	sort.Slice(result, func(i int, j int) bool {
+		if result[i].ID() == result[j].ID() {
+			return result[i].MType() < result[j].MType()
+		}
+
+		return result[i].ID() < result[j].ID()
+	})
+
+	return result, nil
 }

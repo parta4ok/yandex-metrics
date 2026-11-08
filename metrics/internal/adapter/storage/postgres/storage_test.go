@@ -72,7 +72,7 @@ func TestNewStorage_Migrations(t *testing.T) {
 
 			storage, err := postgres.NewStorage(context.Background(), dsn, migrator)
 			if tt.migrateErr != nil {
-				require.ErrorIs(t, err, tt.migrateErr)
+				require.ErrorIs(t, err, entities.ErrInternalError)
 				require.Nil(t, storage)
 				return
 			}
@@ -243,9 +243,78 @@ func TestStorage_CancelledContext(t *testing.T) {
 	cancel()
 
 	_, err := storage.UpdateMetric(ctx, newCounter(t, "requests", 1))
-	require.ErrorIs(t, err, context.Canceled)
+	require.ErrorIs(t, err, entities.ErrInternalError)
 	_, err = storage.GetMetric(ctx, "requests", entities.Counter)
-	require.ErrorIs(t, err, context.Canceled)
+	require.ErrorIs(t, err, entities.ErrInternalError)
 	_, err = storage.ListMetrics(ctx)
-	require.ErrorIs(t, err, context.Canceled)
+	require.ErrorIs(t, err, entities.ErrInternalError)
+}
+
+func TestStorage_UpdateMetrics(t *testing.T) {
+	storage := newStorage(t)
+	ctx := context.Background()
+
+	_, err := storage.UpdateMetric(ctx, newCounter(t, "requests", 2))
+	require.NoError(t, err)
+
+	stored, err := storage.UpdateMetrics(ctx, []*entities.Metric{
+		newCounter(t, "requests", 3),
+		newGauge(t, "temperature", 3.5),
+	})
+	require.NoError(t, err)
+	require.Len(t, stored, 2)
+	require.Equal(t, int64(5), *stored[0].Delta())
+	require.Equal(t, 3.5, *stored[1].Value())
+
+	metrics, err := storage.ListMetrics(ctx)
+	require.NoError(t, err)
+	require.Len(t, metrics, 2)
+}
+
+func TestStorage_UpdateMetrics_RollsBackOnError(t *testing.T) {
+	storage := newStorage(t)
+	ctx := context.Background()
+
+	invalid, err := entities.NewMetric("broken", entities.Gauge)
+	require.NoError(t, err)
+
+	_, err = storage.UpdateMetrics(ctx, []*entities.Metric{
+		newCounter(t, "requests", 1),
+		invalid,
+	})
+	require.Error(t, err)
+
+	metrics, err := storage.ListMetrics(ctx)
+	require.NoError(t, err)
+	require.Empty(t, metrics)
+}
+
+func TestStorage_UpdateMetrics_AccumulatesConcurrently(t *testing.T) {
+	storage := newStorage(t)
+	ctx := context.Background()
+
+	const workers = 30
+
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			_, err := storage.UpdateMetrics(ctx, []*entities.Metric{
+				newCounter(t, "errors", 2),
+				newCounter(t, "requests", 1),
+			})
+			require.NoError(t, err)
+		}()
+	}
+	wg.Wait()
+
+	requests, err := storage.GetMetric(ctx, "requests", entities.Counter)
+	require.NoError(t, err)
+	require.Equal(t, int64(workers), *requests.Delta())
+
+	errorsMetric, err := storage.GetMetric(ctx, "errors", entities.Counter)
+	require.NoError(t, err)
+	require.Equal(t, int64(2*workers), *errorsMetric.Delta())
 }

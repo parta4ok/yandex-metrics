@@ -62,3 +62,56 @@ func TestSyncBackupDecorator_UpdateMetric_UpdateErrorSkipsBackup(t *testing.T) {
 	require.ErrorIs(t, err, entities.ErrInvalidParam)
 	require.Nil(t, stored)
 }
+
+func TestSyncBackupDecorator_UpdateMetrics_MakesSingleBackup(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	inner := testdata.NewMockMetricServiceProvider(ctrl)
+	service, err := cases.NewSyncBackupDecorator(inner, noop.New())
+	require.NoError(t, err)
+
+	metrics := []*entities.Metric{
+		newCounterMetric(t, "requests", 1),
+		newCounterMetric(t, "errors", 2),
+	}
+	inner.EXPECT().UpdateMetrics(gomock.Any(), metrics).Return(metrics, nil)
+	inner.EXPECT().MakeBackup(gomock.Any()).Return(nil).Times(1)
+
+	stored, err := service.UpdateMetrics(context.Background(), metrics)
+	require.NoError(t, err)
+	require.Equal(t, metrics, stored)
+}
+
+func TestSyncBackupDecorator_UpdateMetrics_BackupErrorIsIgnored(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	inner := testdata.NewMockMetricServiceProvider(ctrl)
+	service, err := cases.NewSyncBackupDecorator(inner, noop.New())
+	require.NoError(t, err)
+
+	metrics := []*entities.Metric{newCounterMetric(t, "requests", 1)}
+	inner.EXPECT().UpdateMetrics(gomock.Any(), metrics).Return(metrics, nil)
+	inner.EXPECT().MakeBackup(gomock.Any()).Return(entities.ErrInternalError)
+
+	stored, err := service.UpdateMetrics(context.Background(), metrics)
+	require.NoError(t, err)
+	require.Equal(t, metrics, stored)
+}
+
+func TestSyncBackupDecorator_UpdateMetrics_UpdateErrorSkipsBackup(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	inner := testdata.NewMockMetricServiceProvider(ctrl)
+	service, err := cases.NewSyncBackupDecorator(inner, noop.New())
+	require.NoError(t, err)
+
+	metrics := []*entities.Metric{newCounterMetric(t, "requests", 1)}
+	inner.EXPECT().UpdateMetrics(gomock.Any(), metrics).Return(nil, entities.ErrInvalidParam)
+
+	stored, err := service.UpdateMetrics(context.Background(), metrics)
+	require.ErrorIs(t, err, entities.ErrInvalidParam)
+	require.Nil(t, stored)
+}

@@ -38,6 +38,10 @@ RETURNING ` + selectColumns
 	listMetricsQuery = "SELECT " + selectColumns + " FROM metrics ORDER BY id, mtype"
 )
 
+type rowQuerier interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
 type startStopper interface {
 	Start(ctx context.Context) error
 	Stop(ctx context.Context) error
@@ -84,7 +88,7 @@ func NewStorage(ctx context.Context, connStr string, migrator toolkitmigrator.Mi
 	if err := migrator.Up(startupCtx); err != nil {
 		pool.Close()
 
-		return nil, errors.Wrap(err, "new postgres storage. apply migrations")
+		return nil, errors.Wrapf(entities.ErrInternalError, "new postgres storage. apply migrations: %v", err)
 	}
 
 	return storage, nil
@@ -92,7 +96,7 @@ func NewStorage(ctx context.Context, connStr string, migrator toolkitmigrator.Mi
 
 func (s *Storage) Ping(ctx context.Context) error {
 	if err := s.pool.Ping(ctx); err != nil {
-		return errors.Wrap(err, "ping postgres")
+		return errors.Wrapf(entities.ErrInternalError, "ping postgres: %v", err)
 	}
 
 	return nil
@@ -122,25 +126,60 @@ func (s *Storage) Stop(ctx context.Context) error {
 	case <-closed:
 		return nil
 	case <-ctx.Done():
-		return errors.Wrap(ctx.Err(), "stop postgres storage. close pool")
+		return errors.Wrapf(entities.ErrInternalError, "stop postgres storage. close pool: %v", ctx.Err())
 	}
 }
 
 func (s *Storage) UpdateMetric(ctx context.Context, metric *entities.Metric) (*entities.Metric, error) {
+	stored, err := s.upsertMetric(ctx, s.pool, metric)
+	if err != nil {
+		return nil, errors.Wrap(err, "update metric")
+	}
+
+	return stored, nil
+}
+
+func (s *Storage) UpdateMetrics(ctx context.Context, metrics []*entities.Metric) ([]*entities.Metric, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, errors.Wrapf(entities.ErrInternalError, "update metrics. begin transaction: %v", err)
+	}
+	defer func() {
+		tx.Rollback(ctx)
+	}()
+
+	stored := make([]*entities.Metric, 0, len(metrics))
+	for _, metric := range metrics {
+		storedMetric, err := s.upsertMetric(ctx, tx, metric)
+		if err != nil {
+			return nil, errors.Wrap(err, "update metrics")
+		}
+
+		stored = append(stored, storedMetric)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, errors.Wrapf(entities.ErrInternalError, "update metrics. commit transaction: %v", err)
+	}
+
+	return stored, nil
+}
+
+func (s *Storage) upsertMetric(ctx context.Context, querier rowQuerier, metric *entities.Metric) (*entities.Metric, error) {
 	var row pgx.Row
 
 	switch metric.MType() {
 	case entities.Counter:
-		row = s.pool.QueryRow(ctx, upsertCounterQuery, metric.ID(), string(metric.MType()), metric.Delta(), metric.Hash())
+		row = querier.QueryRow(ctx, upsertCounterQuery, metric.ID(), string(metric.MType()), metric.Delta(), metric.Hash())
 	case entities.Gauge:
-		row = s.pool.QueryRow(ctx, upsertGaugeQuery, metric.ID(), string(metric.MType()), metric.Value(), metric.Hash())
+		row = querier.QueryRow(ctx, upsertGaugeQuery, metric.ID(), string(metric.MType()), metric.Value(), metric.Hash())
 	default:
-		return nil, errors.Wrap(entities.ErrInvalidParam, "update metric. metric type is invalid")
+		return nil, errors.Wrap(entities.ErrInvalidParam, "upsert metric. metric type is invalid")
 	}
 
 	stored, err := s.scanMetric(row)
 	if err != nil {
-		return nil, errors.Wrap(err, "update metric. upsert")
+		return nil, errors.Wrap(err, "upsert metric")
 	}
 
 	return stored, nil
@@ -158,7 +197,7 @@ func (s *Storage) GetMetric(ctx context.Context, id string, mType entities.MType
 func (s *Storage) ListMetrics(ctx context.Context) ([]*entities.Metric, error) {
 	rows, err := s.pool.Query(ctx, listMetricsQuery)
 	if err != nil {
-		return nil, errors.Wrap(err, "list metrics. select")
+		return nil, errors.Wrapf(entities.ErrInternalError, "list metrics. select: %v", err)
 	}
 	defer rows.Close()
 
@@ -172,7 +211,7 @@ func (s *Storage) ListMetrics(ctx context.Context) ([]*entities.Metric, error) {
 		metrics = append(metrics, metric)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, errors.Wrap(err, "list metrics. rows")
+		return nil, errors.Wrapf(entities.ErrInternalError, "list metrics. rows: %v", err)
 	}
 
 	return metrics, nil
@@ -192,7 +231,7 @@ func (s *Storage) scanMetric(row pgx.Row) (*entities.Metric, error) {
 			return nil, errors.Wrap(entities.ErrNotFound, "scan metric. metric not found")
 		}
 
-		return nil, errors.Wrap(err, "scan metric")
+		return nil, errors.Wrapf(entities.ErrInternalError, "scan metric: %v", err)
 	}
 
 	metric, err := entities.NewMetric(id, entities.MType(mType))
