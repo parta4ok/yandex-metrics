@@ -10,4 +10,5 @@ import (
 
 type MetricServiceClient interface {
 	UpdateAgentData(ctx context.Context, metric *entities.Metric) error
+	UpdateAgentDataBatch(ctx context.Context, metrics []*entities.Metric) error
 }

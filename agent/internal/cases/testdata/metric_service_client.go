@@ -54,3 +54,17 @@ func (mr *MockMetricServiceClientMockRecorder) UpdateAgentData(ctx, metric any) 
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateAgentData", reflect.TypeOf((*MockMetricServiceClient)(nil).UpdateAgentData), ctx, metric)
 }
+
+// UpdateAgentDataBatch mocks base method.
+func (m *MockMetricServiceClient) UpdateAgentDataBatch(ctx context.Context, metrics []*entities.Metric) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateAgentDataBatch", ctx, metrics)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateAgentDataBatch indicates an expected call of UpdateAgentDataBatch.
+func (mr *MockMetricServiceClientMockRecorder) UpdateAgentDataBatch(ctx, metrics any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateAgentDataBatch", reflect.TypeOf((*MockMetricServiceClient)(nil).UpdateAgentDataBatch), ctx, metrics)
+}

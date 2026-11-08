@@ -128,6 +128,104 @@ func TestClient_UpdateAgentData(t *testing.T) {
 	}
 }
 
+func TestClient_UpdateAgentDataBatch(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		metrics    []*entities.Metric
+		statusCode int
+		transport  error
+		wantBody   string
+		wantErr    error
+		wantCalled bool
+	}{
+		{name: "empty batch", wantErr: entities.ErrNotFound},
+		{name: "nil metric", metrics: []*entities.Metric{nil}, wantErr: entities.ErrInvalidParam},
+		{
+			name:    "invalid metric blocks the whole batch",
+			metrics: []*entities.Metric{gaugeMetric(t, 1.5), newMetric(t, entities.PollCount)},
+			wantErr: entities.ErrInvalidParam,
+		},
+		{
+			name:       "batch",
+			metrics:    []*entities.Metric{gaugeMetric(t, 1.5), counterMetric(t, 42)},
+			statusCode: http.StatusOK,
+			wantBody:   `[{"id":"Alloc","type":"gauge","value":1.5},{"id":"PollCount","type":"counter","delta":42}]`,
+			wantCalled: true,
+		},
+		{
+			name:       "bad request",
+			metrics:    []*entities.Metric{gaugeMetric(t, 1)},
+			statusCode: http.StatusBadRequest,
+			wantErr:    entities.ErrInvalidParam,
+			wantCalled: true,
+		},
+		{
+			name:       "internal error",
+			metrics:    []*entities.Metric{gaugeMetric(t, 1)},
+			statusCode: http.StatusInternalServerError,
+			wantErr:    entities.ErrInternalError,
+			wantCalled: true,
+		},
+		{
+			name:       "transport error",
+			metrics:    []*entities.Metric{gaugeMetric(t, 1)},
+			transport:  errors.New("unavailable"),
+			wantErr:    errors.New("unavailable"),
+			wantCalled: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			called := false
+			client, err := adapter.NewClient("http://metrics.example/", &http.Client{
+				Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+					called = true
+					require.Equal(t, http.MethodPost, req.Method)
+					require.Equal(t, "/updates", req.URL.Path)
+					require.Equal(t, "application/json", req.Header.Get("Content-Type"))
+					require.Equal(t, "gzip", req.Header.Get("Content-Encoding"))
+					require.Equal(t, "gzip", req.Header.Get("Accept-Encoding"))
+					if tt.wantBody != "" {
+						reader, err := gzip.NewReader(req.Body)
+						require.NoError(t, err)
+						body, err := io.ReadAll(reader)
+						require.NoError(t, err)
+						require.JSONEq(t, tt.wantBody, string(body))
+					}
+					if tt.transport != nil {
+						return nil, tt.transport
+					}
+
+					return &http.Response{
+						StatusCode: tt.statusCode,
+						Body:       io.NopCloser(bytes.NewBufferString("response")),
+						Header:     make(http.Header),
+					}, nil
+				}),
+			}, noop.New())
+			require.NoError(t, err)
+
+			err = client.UpdateAgentDataBatch(context.Background(), tt.metrics)
+
+			require.Equal(t, tt.wantCalled, called)
+			if tt.wantErr != nil {
+				if tt.transport != nil {
+					require.ErrorContains(t, err, tt.transport.Error())
+				} else {
+					require.ErrorIs(t, err, tt.wantErr)
+				}
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
 func newMetric(t *testing.T, name entities.MName) *entities.Metric {
 	t.Helper()
 	metric, err := entities.NewMetric(name)
