@@ -38,6 +38,7 @@ const (
 	updateBasePath = "/update"
 	valueBasePath  = "/value"
 	pingPath       = "/ping"
+	updatesPath    = "/updates"
 )
 
 //go:embed templates/metrics.html
@@ -133,6 +134,8 @@ func (s *Server) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 func (s *Server) registerRoutes(router chi.Router) {
 	router.Get("/", s.listMetrics)
 	router.Get(pingPath, s.ping)
+	router.Post(updatesPath, s.updateMetricsJSON)
+	router.Post(updatesPath+"/", s.updateMetricsJSON)
 	router.Route(updateBasePath, func(router chi.Router) {
 		router.Post("/", s.updateMetricJSON)
 		router.Post(
@@ -194,6 +197,33 @@ func (s *Server) updateMetricJSON(resp http.ResponseWriter, req *http.Request) {
 	}
 
 	s.writeMetricJSON(resp, stored)
+}
+
+func (s *Server) updateMetricsJSON(resp http.ResponseWriter, req *http.Request) {
+	var requests []dto.UpdateMetricRequestDTO
+	if err := s.decodeJSON(req, &requests); err != nil {
+		s.handleError(resp, err)
+		return
+	}
+
+	metrics := make([]*entities.Metric, 0, len(requests))
+	for i := range requests {
+		metric, err := s.metricFromUpdateRequest(&requests[i])
+		if err != nil {
+			s.handleError(resp, err)
+			return
+		}
+
+		metrics = append(metrics, metric)
+	}
+
+	stored, err := s.service.UpdateMetrics(req.Context(), metrics)
+	if err != nil {
+		s.handleError(resp, err)
+		return
+	}
+
+	s.writeMetricsJSON(resp, stored)
 }
 
 func (s *Server) getMetricJSON(resp http.ResponseWriter, req *http.Request) {
@@ -295,6 +325,23 @@ func (s *Server) writeMetricJSON(resp http.ResponseWriter, metric *entities.Metr
 	body, err := json.Marshal(s.newMetricResponse(metric))
 	if err != nil {
 		s.handleError(resp, errors.Wrap(entities.ErrInternalError, "write metric json. marshal response"))
+		return
+	}
+
+	resp.Header().Set(contentTypeHeader, jsonMediaType)
+	resp.WriteHeader(http.StatusOK)
+	_, _ = resp.Write(body)
+}
+
+func (s *Server) writeMetricsJSON(resp http.ResponseWriter, metrics []*entities.Metric) {
+	responses := make([]dto.MetricResponseDTO, 0, len(metrics))
+	for _, metric := range metrics {
+		responses = append(responses, s.newMetricResponse(metric))
+	}
+
+	body, err := json.Marshal(responses)
+	if err != nil {
+		s.handleError(resp, errors.Wrap(entities.ErrInternalError, "write metrics json. marshal response"))
 		return
 	}
 
