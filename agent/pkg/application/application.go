@@ -18,6 +18,7 @@ import (
 	"github.com/parta4ok/yandex-metrics/agent/internal/entities"
 	toolkitlogger "github.com/parta4ok/yandex-metrics/toolkit/logger"
 	"github.com/parta4ok/yandex-metrics/toolkit/logger/zaplog"
+	"github.com/parta4ok/yandex-metrics/toolkit/retry"
 )
 
 type Application struct {
@@ -99,13 +100,14 @@ func (app *Application) buildDataProvider() {
 }
 
 func (app *Application) buildMetricServiceClient() error {
-	client, err := metricsclient.NewClient(
-		app.MetricsHTTPAddress(),
-		&http.Client{
-			Timeout: app.MetricsHTTPTimeout(),
-		},
-		app.logger,
-	)
+	retryClient, err := retry.NewClient(&http.Client{
+		Timeout: app.MetricsHTTPTimeout(),
+	})
+	if err != nil {
+		return errors.Wrap(err, "build metrics service client. create retry client")
+	}
+
+	client, err := metricsclient.NewClient(app.MetricsHTTPAddress(), retryClient, app.logger)
 	if err != nil {
 		return errors.Wrap(err, "build metrics service client. create client")
 	}

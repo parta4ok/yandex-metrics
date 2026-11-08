@@ -10,20 +10,25 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/parta4ok/yandex-metrics/metrics/internal/adapter/config"
+	pgmigrator "github.com/parta4ok/yandex-metrics/metrics/internal/adapter/migrator/postgres"
 	"github.com/parta4ok/yandex-metrics/metrics/internal/adapter/osfile"
 	"github.com/parta4ok/yandex-metrics/metrics/internal/adapter/storage/inmemory"
+	pgstorage "github.com/parta4ok/yandex-metrics/metrics/internal/adapter/storage/postgres"
 	"github.com/parta4ok/yandex-metrics/metrics/internal/cases"
 	"github.com/parta4ok/yandex-metrics/metrics/internal/entities"
 	"github.com/parta4ok/yandex-metrics/metrics/internal/port"
 	"github.com/parta4ok/yandex-metrics/metrics/internal/port/http/public"
+	noopbackup "github.com/parta4ok/yandex-metrics/toolkit/backup/noop"
 	toolkitlogger "github.com/parta4ok/yandex-metrics/toolkit/logger"
 	"github.com/parta4ok/yandex-metrics/toolkit/logger/zaplog"
+	nooppinger "github.com/parta4ok/yandex-metrics/toolkit/pinger/noop"
 )
 
 type Application struct {
 	ConfigProvider
 	storage       cases.MetricsStorage
 	backup        cases.BackupProvider
+	pinger        cases.Pinger
 	service       port.MetricServiceProvider
 	publicServer  StartStopper
 	startStoppers []StartStopper
@@ -59,12 +64,12 @@ func newApplication(config ConfigProvider, logger toolkitlogger.Logger) (*Applic
 }
 
 func (app *Application) Run() error {
-	if err := app.build(); err != nil {
-		return app.handleError(err)
-	}
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	if err := app.build(ctx); err != nil {
+		return app.handleError(err)
+	}
 
 	if err := app.restoreBackup(ctx); err != nil {
 		return app.handleError(err)
@@ -77,11 +82,9 @@ func (app *Application) Run() error {
 	return nil
 }
 
-func (app *Application) build() error {
-	app.buildStorage()
-
-	if err := app.buildBackup(); err != nil {
-		return errors.Wrap(err, "build application. backup provider")
+func (app *Application) build(ctx context.Context) error {
+	if err := app.buildStorage(ctx); err != nil {
+		return errors.Wrap(err, "build application. storage")
 	}
 	if err := app.buildService(); err != nil {
 		return errors.Wrap(err, "build application. metrics service")
@@ -96,23 +99,52 @@ func (app *Application) build() error {
 	return nil
 }
 
-func (app *Application) buildStorage() {
-	app.storage = inmemory.NewStorage(app.logger)
-}
-
-func (app *Application) buildBackup() error {
-	backup, err := osfile.NewBackup(app.FileStoragePath(), app.logger)
-	if err != nil {
-		return errors.Wrap(err, "build backup provider")
+func (app *Application) buildStorage(ctx context.Context) error {
+	if app.useDatabase() {
+		return app.buildDatabaseStorage(ctx)
 	}
 
+	return app.buildMemoryStorage()
+}
+
+func (app *Application) buildMemoryStorage() error {
+	backup, err := osfile.NewBackup(app.FileStoragePath(), app.logger)
+	if err != nil {
+		return errors.Wrap(err, "build memory storage. backup provider")
+	}
+
+	app.storage = inmemory.NewStorage(app.logger)
+	app.pinger = nooppinger.New()
 	app.backup = backup
 
 	return nil
 }
 
+func (app *Application) buildDatabaseStorage(ctx context.Context) error {
+	migrator, err := pgmigrator.NewMigrator(app.DatabaseDSN())
+	if err != nil {
+		return errors.Wrap(err, "build database storage. migrator")
+	}
+
+	storage, err := pgstorage.NewStorage(ctx, app.DatabaseDSN(), migrator)
+	if err != nil {
+		return errors.Wrap(err, "build database storage")
+	}
+
+	app.storage = storage
+	app.pinger = storage
+	app.backup = noopbackup.New[*entities.Metric]()
+	app.startStoppers = append(app.startStoppers, storage)
+
+	return nil
+}
+
+func (app *Application) useDatabase() bool {
+	return app.DatabaseDSN() != ""
+}
+
 func (app *Application) buildService() error {
-	service, err := cases.NewMetricsService(app.storage, app.backup, app.logger)
+	service, err := cases.NewMetricsService(app.storage, app.backup, app.pinger, app.logger)
 	if err != nil {
 		return errors.Wrap(err, "build metrics service")
 	}
@@ -123,6 +155,10 @@ func (app *Application) buildService() error {
 }
 
 func (app *Application) buildBackupMode() error {
+	if app.useDatabase() {
+		return nil
+	}
+
 	if app.StoreInterval() == 0 {
 		service, err := cases.NewSyncBackupDecorator(app.service, app.logger)
 		if err != nil {

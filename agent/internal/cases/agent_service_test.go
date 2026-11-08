@@ -155,15 +155,16 @@ func TestAgentService_UpdateMetrics(t *testing.T) {
 func TestAgentService_SendMetrics(t *testing.T) {
 	t.Parallel()
 
-	t.Run("sends all metrics despite individual errors", func(t *testing.T) {
+	t.Run("sends all metrics in one batch and acknowledges counter", func(t *testing.T) {
 		t.Parallel()
 
 		service, client, _, storage := newService(t)
 		metrics := gaugeMetrics(t, entities.Alloc, 1.5)
 		require.NoError(t, metrics.IncrementCounter(entities.PollCount, 2))
 		storage.EXPECT().GetAgentData(gomock.Any()).Return(metrics, nil)
-		client.EXPECT().UpdateAgentData(gomock.Any(), gomock.Any()).Return(entities.ErrInternalError)
-		client.EXPECT().UpdateAgentData(gomock.Any(), gomock.Any()).Return(nil)
+		client.EXPECT().
+			UpdateAgentDataBatch(gomock.Any(), gomock.Len(2)).
+			Return(nil)
 		storage.EXPECT().AcknowledgeCounter(gomock.Any(), entities.PollCount, int64(2)).Return(nil)
 
 		require.NoError(t, service.SendMetrics(context.Background()))
@@ -177,7 +178,7 @@ func TestAgentService_SendMetrics(t *testing.T) {
 		require.NoError(t, metrics.IncrementCounter(entities.PollCount, 2))
 		storage.EXPECT().GetAgentData(gomock.Any()).Return(metrics, nil)
 		client.EXPECT().
-			UpdateAgentData(gomock.Any(), gomock.Any()).
+			UpdateAgentDataBatch(gomock.Any(), gomock.Any()).
 			Return(entities.ErrInternalError)
 
 		require.NoError(t, service.SendMetrics(context.Background()))
@@ -189,7 +190,16 @@ func TestAgentService_SendMetrics(t *testing.T) {
 		service, client, _, storage := newService(t)
 		metrics := gaugeMetrics(t, entities.Alloc, 1.5)
 		storage.EXPECT().GetAgentData(gomock.Any()).Return(metrics, nil)
-		client.EXPECT().UpdateAgentData(gomock.Any(), gomock.Any()).Return(nil)
+		client.EXPECT().UpdateAgentDataBatch(gomock.Any(), gomock.Any()).Return(nil)
+
+		require.NoError(t, service.SendMetrics(context.Background()))
+	})
+
+	t.Run("does not send an empty batch", func(t *testing.T) {
+		t.Parallel()
+
+		service, _, _, storage := newService(t)
+		storage.EXPECT().GetAgentData(gomock.Any()).Return(entities.NewMetrics(), nil)
 
 		require.NoError(t, service.SendMetrics(context.Background()))
 	})
@@ -201,7 +211,7 @@ func TestAgentService_SendMetrics(t *testing.T) {
 		metrics := entities.NewMetrics()
 		require.NoError(t, metrics.IncrementCounter(entities.PollCount, 2))
 		storage.EXPECT().GetAgentData(gomock.Any()).Return(metrics, nil)
-		client.EXPECT().UpdateAgentData(gomock.Any(), gomock.Any()).Return(nil)
+		client.EXPECT().UpdateAgentDataBatch(gomock.Any(), gomock.Any()).Return(nil)
 		storage.EXPECT().
 			AcknowledgeCounter(gomock.Any(), entities.PollCount, int64(2)).
 			Return(entities.ErrInternalError)
