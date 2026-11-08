@@ -297,11 +297,16 @@ func (s *Server) handleError(resp http.ResponseWriter, err error) {
 		status = http.StatusBadRequest
 	case errors.Is(err, entities.ErrNotFound):
 		status = http.StatusNotFound
+	case errors.Is(err, entities.ErrTemporary):
+		status = http.StatusServiceUnavailable
 	case errors.Is(err, nooppinger.ErrNotConfigured):
 		status = http.StatusInternalServerError
 	}
-	if status == http.StatusInternalServerError {
+	switch status {
+	case http.StatusInternalServerError:
 		s.logger.Error("handle HTTP request error", "error", err)
+	case http.StatusServiceUnavailable:
+		s.logger.Warn("handle HTTP request temporary error", "error", err)
 	}
 
 	http.Error(resp, http.StatusText(status), status)

@@ -643,3 +643,72 @@ func TestServerUpdateMetricsJSON_ServiceErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestServer_TemporaryErrorReturnsServiceUnavailable(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		expect  func(service *testdata.MockMetricServiceProvider)
+		request func() *http.Request
+	}{
+		{
+			name: "update metric",
+			expect: func(service *testdata.MockMetricServiceProvider) {
+				service.EXPECT().UpdateMetric(gomock.Any(), gomock.Any()).Return(nil, entities.ErrTemporary)
+			},
+			request: newUpdateMetricRequest,
+		},
+		{
+			name: "update metric json",
+			expect: func(service *testdata.MockMetricServiceProvider) {
+				service.EXPECT().UpdateMetric(gomock.Any(), gomock.Any()).Return(nil, entities.ErrTemporary)
+			},
+			request: func() *http.Request {
+				return newJSONRequest("/update", `{"id":"a","type":"gauge","value":1}`, "application/json")
+			},
+		},
+		{
+			name: "update metrics",
+			expect: func(service *testdata.MockMetricServiceProvider) {
+				service.EXPECT().UpdateMetrics(gomock.Any(), gomock.Any()).Return(nil, entities.ErrTemporary)
+			},
+			request: func() *http.Request {
+				return newJSONRequest("/updates/", `[{"id":"a","type":"gauge","value":1}]`, "application/json")
+			},
+		},
+		{
+			name: "get metric",
+			expect: func(service *testdata.MockMetricServiceProvider) {
+				service.EXPECT().GetMetric(gomock.Any(), "a", entities.Gauge).Return(nil, entities.ErrTemporary)
+			},
+			request: func() *http.Request {
+				return httptest.NewRequest(http.MethodGet, "/value/gauge/a", nil)
+			},
+		},
+		{
+			name: "list metrics",
+			expect: func(service *testdata.MockMetricServiceProvider) {
+				service.EXPECT().ListMetrics(gomock.Any()).Return(nil, entities.ErrTemporary)
+			},
+			request: func() *http.Request {
+				return httptest.NewRequest(http.MethodGet, "/", nil)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			server, service := newTestServer(t)
+			tt.expect(service)
+
+			resp := httptest.NewRecorder()
+			server.ServeHTTP(resp, tt.request())
+
+			require.Equal(t, http.StatusServiceUnavailable, resp.Code)
+			require.NotContains(t, resp.Body.String(), entities.ErrTemporary.Error())
+		})
+	}
+}
