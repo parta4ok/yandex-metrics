@@ -21,7 +21,7 @@ import (
 	noopbackup "github.com/parta4ok/yandex-metrics/toolkit/backup/noop"
 	toolkitlogger "github.com/parta4ok/yandex-metrics/toolkit/logger"
 	"github.com/parta4ok/yandex-metrics/toolkit/logger/zaplog"
-	nooppinger "github.com/parta4ok/yandex-metrics/toolkit/pinger/noop"
+	unconfiguredpinger "github.com/parta4ok/yandex-metrics/toolkit/pinger/unconfigured"
 )
 
 type Application struct {
@@ -114,7 +114,7 @@ func (app *Application) buildMemoryStorage() error {
 	}
 
 	app.storage = inmemory.NewStorage(app.logger)
-	app.pinger = nooppinger.New()
+	app.pinger = unconfiguredpinger.New()
 	app.backup = backup
 
 	return nil

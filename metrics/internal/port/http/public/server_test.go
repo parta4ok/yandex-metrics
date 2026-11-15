@@ -16,7 +16,7 @@ import (
 	"github.com/parta4ok/yandex-metrics/metrics/internal/port/http/public"
 	"github.com/parta4ok/yandex-metrics/metrics/internal/port/testdata"
 	"github.com/parta4ok/yandex-metrics/toolkit/logger/noop"
-	nooppinger "github.com/parta4ok/yandex-metrics/toolkit/pinger/noop"
+	unconfiguredpinger "github.com/parta4ok/yandex-metrics/toolkit/pinger/unconfigured"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
@@ -492,7 +492,7 @@ func TestServerPing(t *testing.T) {
 		wantStatus int
 	}{
 		{name: "database is available", wantStatus: http.StatusOK},
-		{name: "pinger is not configured", pingErr: nooppinger.ErrNotConfigured, wantStatus: http.StatusInternalServerError},
+		{name: "pinger is not configured", pingErr: unconfiguredpinger.ErrNotConfigured, wantStatus: http.StatusInternalServerError},
 		{name: "database is unavailable", pingErr: errors.New("connection refused"), wantStatus: http.StatusInternalServerError},
 	}
 

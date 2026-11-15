@@ -20,7 +20,7 @@ import (
 	toolkitconfig "github.com/parta4ok/yandex-metrics/toolkit/config"
 	toolkitlogger "github.com/parta4ok/yandex-metrics/toolkit/logger"
 	"github.com/parta4ok/yandex-metrics/toolkit/middleware"
-	nooppinger "github.com/parta4ok/yandex-metrics/toolkit/pinger/noop"
+	unconfiguredpinger "github.com/parta4ok/yandex-metrics/toolkit/pinger/unconfigured"
 )
 
 const (
@@ -299,7 +299,7 @@ func (s *Server) handleError(resp http.ResponseWriter, err error) {
 		status = http.StatusNotFound
 	case errors.Is(err, entities.ErrTemporary):
 		status = http.StatusServiceUnavailable
-	case errors.Is(err, nooppinger.ErrNotConfigured):
+	case errors.Is(err, unconfiguredpinger.ErrNotConfigured):
 		status = http.StatusInternalServerError
 	}
 	switch status {
