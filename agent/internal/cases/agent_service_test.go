@@ -204,6 +204,20 @@ func TestAgentService_SendMetrics(t *testing.T) {
 		require.NoError(t, service.SendMetrics(context.Background()))
 	})
 
+	t.Run("keeps counter when the server answers not found", func(t *testing.T) {
+		t.Parallel()
+
+		service, client, _, storage := newService(t)
+		metrics := entities.NewMetrics()
+		require.NoError(t, metrics.IncrementCounter(entities.PollCount, 2))
+		storage.EXPECT().GetAgentData(gomock.Any()).Return(metrics, nil)
+		client.EXPECT().
+			UpdateAgentDataBatch(gomock.Any(), gomock.Any()).
+			Return(entities.ErrNotFound)
+
+		require.NoError(t, service.SendMetrics(context.Background()))
+	})
+
 	t.Run("wraps counter acknowledgement error", func(t *testing.T) {
 		t.Parallel()
 

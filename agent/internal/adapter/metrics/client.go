@@ -86,7 +86,7 @@ func (c *Client) UpdateAgentData(ctx context.Context, metric *entities.Metric) e
 
 func (c *Client) UpdateAgentDataBatch(ctx context.Context, metrics []*entities.Metric) error {
 	if len(metrics) == 0 {
-		return errors.Wrap(entities.ErrNotFound, "update agent data batch. nothing to send")
+		return errors.Wrap(entities.ErrEmptyBatch, "update agent data batch. nothing to send")
 	}
 
 	requests := make([]*UpdateMetricRequestDTO, 0, len(metrics))

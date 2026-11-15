@@ -73,7 +73,7 @@ func (s *AgentService) SendMetrics(ctx context.Context) error {
 	}
 
 	if err := s.sendMetrics(ctx, metrics); err != nil {
-		if errors.Is(err, entities.ErrNotFound) {
+		if errors.Is(err, entities.ErrEmptyBatch) {
 			return nil
 		}
 
@@ -104,7 +104,7 @@ func (s *AgentService) sendMetrics(ctx context.Context, metrics *entities.Metric
 		return errors.Wrap(err, "send metrics. list metrics")
 	}
 	if len(metricList) == 0 {
-		return errors.Wrap(entities.ErrNotFound, "send metrics. nothing to send")
+		return errors.Wrap(entities.ErrEmptyBatch, "send metrics. nothing to send")
 	}
 
 	if err := s.metricServiceClient.UpdateAgentDataBatch(ctx, metricList); err != nil {

@@ -144,7 +144,7 @@ func TestClient_UpdateAgentDataBatch(t *testing.T) {
 		wantErr    error
 		wantCalled bool
 	}{
-		{name: "empty batch", wantErr: entities.ErrNotFound},
+		{name: "empty batch", wantErr: entities.ErrEmptyBatch},
 		{name: "nil metric", metrics: []*entities.Metric{nil}, wantErr: entities.ErrInvalidParam},
 		{
 			name:    "invalid metric blocks the whole batch",
