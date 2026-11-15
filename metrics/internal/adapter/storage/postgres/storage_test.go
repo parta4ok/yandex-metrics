@@ -9,6 +9,7 @@ import (
 	"os"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
@@ -239,18 +240,42 @@ func TestStorage_AccumulatesCounterConcurrently(t *testing.T) {
 	require.Equal(t, int64(workers), *metric.Delta())
 }
 
-func TestStorage_CancelledContext(t *testing.T) {
+func TestStorage_ContextErrorsAreNotTemporary(t *testing.T) {
 	storage := newStorage(t)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	cancelled, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := storage.UpdateMetric(ctx, newCounter(t, "requests", 1))
-	require.ErrorIs(t, err, entities.ErrInternalError)
-	_, err = storage.GetMetric(ctx, "requests", entities.Counter)
-	require.ErrorIs(t, err, entities.ErrInternalError)
-	_, err = storage.ListMetrics(ctx)
-	require.ErrorIs(t, err, entities.ErrInternalError)
+	expired, expire := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer expire()
+
+	tests := []struct {
+		name string
+		ctx  context.Context
+	}{
+		{name: "cancelled", ctx: cancelled},
+		{name: "deadline exceeded", ctx: expired},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := storage.UpdateMetric(tt.ctx, newCounter(t, "requests", 1))
+			require.ErrorIs(t, err, entities.ErrInternalError)
+			require.NotErrorIs(t, err, entities.ErrTemporary)
+
+			_, err = storage.UpdateMetrics(tt.ctx, []*entities.Metric{newCounter(t, "requests", 1)})
+			require.ErrorIs(t, err, entities.ErrInternalError)
+			require.NotErrorIs(t, err, entities.ErrTemporary)
+
+			_, err = storage.GetMetric(tt.ctx, "requests", entities.Counter)
+			require.ErrorIs(t, err, entities.ErrInternalError)
+			require.NotErrorIs(t, err, entities.ErrTemporary)
+
+			_, err = storage.ListMetrics(tt.ctx)
+			require.ErrorIs(t, err, entities.ErrInternalError)
+			require.NotErrorIs(t, err, entities.ErrTemporary)
+		})
+	}
 }
 
 func TestStorage_UpdateMetrics(t *testing.T) {

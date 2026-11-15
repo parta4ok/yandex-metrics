@@ -258,6 +258,10 @@ func (s *Storage) databaseError(operation string, err error) error {
 }
 
 func (s *Storage) isTemporary(err error) bool {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
 		return pgerrcode.IsConnectionException(pgErr.Code)
@@ -268,10 +272,10 @@ func (s *Storage) isTemporary(err error) bool {
 		return true
 	}
 
-	var netErr net.Error
+	var opErr *net.OpError
 
 	return errors.Is(err, pgconn.ErrConnClosed) ||
 		errors.Is(err, io.EOF) ||
 		errors.Is(err, io.ErrUnexpectedEOF) ||
-		errors.As(err, &netErr)
+		(errors.As(err, &opErr) && !opErr.Timeout())
 }
