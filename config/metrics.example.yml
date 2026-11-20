@@ -12,3 +12,5 @@ metrics:
         enabled: false
         certificate_file: ""
         key_file: ""
+  database:
+    dsn: ""

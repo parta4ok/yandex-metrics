@@ -34,7 +34,7 @@ func TestStorage_UpdateMetric_CancelledContext(t *testing.T) {
 	cancel()
 
 	_, err := inmemory.NewStorage(noop.New()).UpdateMetric(ctx, newCounter(t, "requests", 1))
-	require.ErrorIs(t, err, context.Canceled)
+	require.ErrorIs(t, err, entities.ErrInternalError)
 }
 
 func TestStorage_GetMetricAndListMetrics(t *testing.T) {
@@ -77,9 +77,9 @@ func TestStorage_ReadCancelledContext(t *testing.T) {
 	storage := inmemory.NewStorage(noop.New())
 
 	_, err := storage.GetMetric(ctx, "requests", entities.Counter)
-	require.ErrorIs(t, err, context.Canceled)
+	require.ErrorIs(t, err, entities.ErrInternalError)
 	_, err = storage.ListMetrics(ctx)
-	require.ErrorIs(t, err, context.Canceled)
+	require.ErrorIs(t, err, entities.ErrInternalError)
 }
 
 func TestStorage_ReadEmptyAndSameNameDifferentTypes(t *testing.T) {
@@ -158,4 +158,73 @@ func mustUpdate(t *testing.T, storage *inmemory.Storage, metric *entities.Metric
 	require.NoError(t, err)
 
 	return stored
+}
+
+func TestStorage_UpdateMetrics(t *testing.T) {
+	t.Parallel()
+
+	storage := inmemory.NewStorage(noop.New())
+	mustUpdate(t, storage, newCounter(t, "requests", 2))
+	mustUpdate(t, storage, newGauge(t, "temperature", 1.5))
+
+	stored, err := storage.UpdateMetrics(context.Background(), []*entities.Metric{
+		newCounter(t, "requests", 3),
+		newGauge(t, "temperature", 3.5),
+		newGauge(t, "load", 0.5),
+	})
+	require.NoError(t, err)
+	require.Len(t, stored, 3)
+	require.Equal(t, int64(5), *stored[0].Delta())
+	require.Equal(t, 3.5, *stored[1].Value())
+	require.Equal(t, 0.5, *stored[2].Value())
+
+	counter, err := storage.GetMetric(context.Background(), "requests", entities.Counter)
+	require.NoError(t, err)
+	require.Equal(t, int64(5), *counter.Delta())
+}
+
+func TestStorage_UpdateMetrics_CancelledContext(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	storage := inmemory.NewStorage(noop.New())
+	_, err := storage.UpdateMetrics(ctx, []*entities.Metric{newCounter(t, "requests", 1)})
+	require.ErrorIs(t, err, entities.ErrInternalError)
+
+	metrics, err := storage.ListMetrics(context.Background())
+	require.NoError(t, err)
+	require.Empty(t, metrics)
+}
+
+func TestStorage_UpdateMetrics_AccumulatesConcurrently(t *testing.T) {
+	t.Parallel()
+
+	const workers = 50
+
+	storage := inmemory.NewStorage(noop.New())
+
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			_, err := storage.UpdateMetrics(context.Background(), []*entities.Metric{
+				newCounter(t, "requests", 1),
+				newCounter(t, "errors", 2),
+			})
+			require.NoError(t, err)
+		}()
+	}
+	wg.Wait()
+
+	requests, err := storage.GetMetric(context.Background(), "requests", entities.Counter)
+	require.NoError(t, err)
+	require.Equal(t, int64(workers), *requests.Delta())
+
+	errorsMetric, err := storage.GetMetric(context.Background(), "errors", entities.Counter)
+	require.NoError(t, err)
+	require.Equal(t, int64(2*workers), *errorsMetric.Delta())
 }

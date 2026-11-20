@@ -71,6 +71,51 @@ func (s *Storage) UpdateMetric(ctx context.Context, metric *entities.Metric) (*e
 	return stored, nil
 }
 
+func (s *Storage) UpdateMetrics(ctx context.Context, metrics []*entities.Metric) ([]*entities.Metric, error) {
+	if err := validateContext(ctx); err != nil {
+		return nil, errors.Wrap(err, "update metrics. context")
+	}
+
+	updates := make([]*entities.Metric, 0, len(metrics))
+	for _, metric := range metrics {
+		metricCopy, err := cloneMetric(metric)
+		if err != nil {
+			return nil, errors.Wrap(err, "update metrics. clone metric")
+		}
+
+		updates = append(updates, metricCopy)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := validateContext(ctx); err != nil {
+		return nil, errors.Wrap(err, "update metrics. context")
+	}
+
+	stored := make([]*entities.Metric, 0, len(updates))
+	for _, update := range updates {
+		if update.MType() == entities.Counter {
+			if err := s.processCounter(update); err != nil {
+				return nil, errors.Wrap(err, "update metrics. process counter")
+			}
+		}
+
+		storedCopy, err := cloneMetric(update)
+		if err != nil {
+			return nil, errors.Wrap(err, "update metrics. clone stored metric")
+		}
+
+		stored = append(stored, storedCopy)
+	}
+
+	for _, update := range updates {
+		s.metrics[metricKey{id: update.ID(), mType: update.MType()}] = update
+	}
+
+	return stored, nil
+}
+
 func (s *Storage) GetMetric(
 	ctx context.Context,
 	id string,
@@ -158,7 +203,7 @@ func (s *Storage) processCounter(metric *entities.Metric) error {
 
 func validateContext(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
-		return errors.Wrap(err, "context is cancelled")
+		return errors.Wrapf(entities.ErrInternalError, "context is cancelled: %v", err)
 	}
 
 	return nil

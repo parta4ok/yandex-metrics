@@ -7,6 +7,7 @@ const (
 	storeIntervalEnv   = "STORE_INTERVAL"
 	fileStoragePathEnv = "FILE_STORAGE_PATH"
 	restoreEnv         = "RESTORE"
+	databaseDSNEnv     = "DATABASE_DSN"
 )
 
 type environ map[string]string

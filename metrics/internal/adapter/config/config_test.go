@@ -201,3 +201,32 @@ func TestNewConfig_InvalidValues(t *testing.T) {
 		})
 	}
 }
+
+func TestNewConfig_DatabaseDSN(t *testing.T) {
+	t.Parallel()
+
+	path := writeConfig(t, `
+metrics:
+  database:
+    dsn: postgres://file
+`)
+
+	defaults, err := config.NewConfig([]string{"-config", path}, nil)
+	require.NoError(t, err)
+	require.Equal(t, "postgres://file", defaults.DatabaseDSN())
+
+	flagged, err := config.NewConfig([]string{"-config", path, "-d", "postgres://flag"}, nil)
+	require.NoError(t, err)
+	require.Equal(t, "postgres://flag", flagged.DatabaseDSN())
+
+	environ, err := config.NewConfig(
+		[]string{"-config", path, "-d", "postgres://flag"},
+		[]string{"DATABASE_DSN=postgres://env"},
+	)
+	require.NoError(t, err)
+	require.Equal(t, "postgres://env", environ.DatabaseDSN())
+
+	empty, err := config.NewConfig([]string{"-config", writeConfig(t, "metrics: {}\n")}, nil)
+	require.NoError(t, err)
+	require.Empty(t, empty.DatabaseDSN())
+}

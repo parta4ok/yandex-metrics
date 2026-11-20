@@ -85,6 +85,20 @@ func (mr *MockMetricServiceProviderMockRecorder) MakeBackup(ctx any) *gomock.Cal
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MakeBackup", reflect.TypeOf((*MockMetricServiceProvider)(nil).MakeBackup), ctx)
 }
 
+// Ping mocks base method.
+func (m *MockMetricServiceProvider) Ping(ctx context.Context) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Ping", ctx)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Ping indicates an expected call of Ping.
+func (mr *MockMetricServiceProviderMockRecorder) Ping(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Ping", reflect.TypeOf((*MockMetricServiceProvider)(nil).Ping), ctx)
+}
+
 // RestoreBackup mocks base method.
 func (m *MockMetricServiceProvider) RestoreBackup(ctx context.Context) error {
 	m.ctrl.T.Helper()
@@ -112,4 +126,19 @@ func (m *MockMetricServiceProvider) UpdateMetric(ctx context.Context, metric *en
 func (mr *MockMetricServiceProviderMockRecorder) UpdateMetric(ctx, metric any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateMetric", reflect.TypeOf((*MockMetricServiceProvider)(nil).UpdateMetric), ctx, metric)
+}
+
+// UpdateMetrics mocks base method.
+func (m *MockMetricServiceProvider) UpdateMetrics(ctx context.Context, metrics []*entities.Metric) ([]*entities.Metric, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateMetrics", ctx, metrics)
+	ret0, _ := ret[0].([]*entities.Metric)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UpdateMetrics indicates an expected call of UpdateMetrics.
+func (mr *MockMetricServiceProviderMockRecorder) UpdateMetrics(ctx, metrics any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateMetrics", reflect.TypeOf((*MockMetricServiceProvider)(nil).UpdateMetrics), ctx, metrics)
 }

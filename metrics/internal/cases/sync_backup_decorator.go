@@ -47,3 +47,19 @@ func (s *SyncBackupDecorator) UpdateMetric(
 
 	return stored, nil
 }
+
+func (s *SyncBackupDecorator) UpdateMetrics(
+	ctx context.Context,
+	metrics []*entities.Metric,
+) ([]*entities.Metric, error) {
+	stored, err := s.MetricServiceProvider.UpdateMetrics(ctx, metrics)
+	if err != nil {
+		return nil, errors.Wrap(err, "update metrics. update service")
+	}
+
+	if err := s.MakeBackup(ctx); err != nil {
+		s.logger.Warn("update metrics. make backup failed", "error", err)
+	}
+
+	return stored, nil
+}

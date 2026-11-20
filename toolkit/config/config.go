@@ -16,6 +16,10 @@ type TLSConfig interface {
 	TLSKeyFile() string
 }
 
+type DatabaseConfig interface {
+	DatabaseDSN() string
+}
+
 type BackupConfig interface {
 	StoreInterval() time.Duration
 	FileStoragePath() string

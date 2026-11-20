@@ -22,6 +22,7 @@ const (
 	storeIntervalKey                = "metrics.backup.store_interval"
 	fileStoragePathKey              = "metrics.backup.file_storage_path"
 	restoreKey                      = "metrics.backup.restore"
+	databaseDSNKey                  = "metrics.database.dsn"
 
 	defaultGracefulShutdownTimeout = 5 * time.Second
 	defaultPublicHTTPAddress       = "localhost:8080"
@@ -29,6 +30,7 @@ const (
 	defaultStoreInterval           = 300 * time.Second
 	defaultFileStoragePath         = "metrics-storage.json"
 	defaultRestore                 = false
+	defaultDatabaseDSN             = ""
 
 	configPathEnv        = "METRIC_CONFIG_PATH"
 	defaultConfigPath    = "config/metrics.yml"
@@ -75,6 +77,7 @@ func (c *Config) setDefaults() error {
 		storeIntervalKey:           defaultStoreInterval,
 		fileStoragePathKey:         defaultFileStoragePath,
 		restoreKey:                 defaultRestore,
+		databaseDSNKey:             defaultDatabaseDSN,
 	}
 	for key, value := range defaults {
 		if err := c.set(key, value); err != nil {
@@ -128,6 +131,11 @@ func (c *Config) applyFlags(flags *cliFlags) error {
 			return err
 		}
 	}
+	if flags.isSet(databaseDSNFlag) {
+		if err := c.set(databaseDSNKey, flags.databaseDSN); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -158,6 +166,11 @@ func (c *Config) applyEnviron(env environ) error {
 			return errors.Wrapf(entities.ErrInvalidParam, "%s must be true or false", restoreEnv)
 		}
 		if err := c.set(restoreKey, restore); err != nil {
+			return err
+		}
+	}
+	if dsn, ok := env.lookup(databaseDSNEnv); ok {
+		if err := c.set(databaseDSNKey, dsn); err != nil {
 			return err
 		}
 	}
@@ -226,4 +239,8 @@ func (c *Config) FileStoragePath() string {
 
 func (c *Config) Restore() bool {
 	return c.settings.Bool(restoreKey)
+}
+
+func (c *Config) DatabaseDSN() string {
+	return c.settings.String(databaseDSNKey)
 }

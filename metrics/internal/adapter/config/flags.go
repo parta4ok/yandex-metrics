@@ -14,6 +14,7 @@ const (
 	storeIntervalFlag   = "i"
 	fileStoragePathFlag = "f"
 	restoreFlag         = "r"
+	databaseDSNFlag     = "d"
 )
 
 type cliFlags struct {
@@ -24,6 +25,7 @@ type cliFlags struct {
 	storeInterval   int
 	fileStoragePath string
 	restore         bool
+	databaseDSN     string
 }
 
 func newCLIFlags() *cliFlags {
@@ -52,6 +54,7 @@ func newCLIFlags() *cliFlags {
 		false,
 		"restore metrics from the backup file on start (default false)",
 	)
+	flags.set.StringVar(&flags.databaseDSN, databaseDSNFlag, "", "database connection string (default empty)")
 
 	return flags
 }
