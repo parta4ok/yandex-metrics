@@ -6,6 +6,7 @@ const (
 	addressEnv        = "ADDRESS"
 	reportIntervalEnv = "REPORT_INTERVAL"
 	pollIntervalEnv   = "POLL_INTERVAL"
+	signatureKeyEnv   = "KEY"
 )
 
 type environ map[string]string

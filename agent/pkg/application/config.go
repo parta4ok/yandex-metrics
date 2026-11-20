@@ -18,6 +18,7 @@ type TickerConfig interface {
 
 type ConfigProvider interface {
 	toolkitconfig.GracefulStopConfig
+	toolkitconfig.SignatureConfig
 	MetricsHTTPClientConfig
 	TickerConfig
 }

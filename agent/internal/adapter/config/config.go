@@ -19,12 +19,14 @@ const (
 	reportIntervalKey          = "agent.ticker.report_interval"
 	metricsHTTPAddressKey      = "agent.http.metrics.address"
 	metricsHTTPTimeoutKey      = "agent.http.metrics.timeout"
+	signatureKeyKey            = "agent.signature.key"
 
 	defaultGracefulShutdownTimeout = 5 * time.Second
 	defaultPollInterval            = 2 * time.Second
 	defaultReportInterval          = 10 * time.Second
 	defaultMetricsHTTPAddress      = "localhost:8080"
 	defaultMetricsHTTPTimeout      = 5 * time.Second
+	defaultSignatureKey            = ""
 
 	configPathEnv        = "METRIC_CONFIG_PATH"
 	defaultConfigPath    = "config/agent.yml"
@@ -70,6 +72,7 @@ func (c *Config) setDefaults() error {
 		reportIntervalKey:          defaultReportInterval,
 		metricsHTTPAddressKey:      defaultMetricsHTTPAddress,
 		metricsHTTPTimeoutKey:      defaultMetricsHTTPTimeout,
+		signatureKeyKey:            defaultSignatureKey,
 	}
 	for key, value := range defaults {
 		if err := c.set(key, value); err != nil {
@@ -108,6 +111,11 @@ func (c *Config) applyFlags(flags *cliFlags) error {
 			return err
 		}
 	}
+	if flags.isSet(signatureKeyFlag) {
+		if err := c.set(signatureKeyKey, flags.signatureKey); err != nil {
+			return err
+		}
+	}
 	if flags.isSet(reportIntervalFlag) {
 		if err := c.set(reportIntervalKey, time.Duration(flags.reportInterval)*time.Second); err != nil {
 			return err
@@ -125,6 +133,11 @@ func (c *Config) applyFlags(flags *cliFlags) error {
 func (c *Config) applyEnviron(env environ) error {
 	if address, ok := env.lookup(addressEnv); ok {
 		if err := c.set(metricsHTTPAddressKey, address); err != nil {
+			return err
+		}
+	}
+	if key, ok := env.lookup(signatureKeyEnv); ok {
+		if err := c.set(signatureKeyKey, key); err != nil {
 			return err
 		}
 	}
@@ -195,4 +208,8 @@ func (c *Config) MetricsHTTPAddress() string {
 
 func (c *Config) MetricsHTTPTimeout() time.Duration {
 	return c.settings.Duration(metricsHTTPTimeoutKey)
+}
+
+func (c *Config) SignatureKey() string {
+	return c.settings.String(signatureKeyKey)
 }

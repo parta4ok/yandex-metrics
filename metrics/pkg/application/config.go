@@ -11,5 +11,6 @@ type ConfigProvider interface {
 	toolkitconfig.GracefulStopConfig
 	toolkitconfig.BackupConfig
 	toolkitconfig.DatabaseConfig
+	toolkitconfig.SignatureConfig
 	PublicHTTPServerConfig
 }
