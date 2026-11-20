@@ -16,6 +16,7 @@ import (
 	"github.com/parta4ok/yandex-metrics/agent/internal/entities"
 	toolkitlogger "github.com/parta4ok/yandex-metrics/toolkit/logger"
 	"github.com/parta4ok/yandex-metrics/toolkit/retry"
+	"github.com/parta4ok/yandex-metrics/toolkit/signature"
 )
 
 const (
@@ -30,9 +31,18 @@ const (
 
 var _ cases.MetricServiceClient = (*Client)(nil)
 
+type Option func(*Client)
+
+func WithSigner(signer *signature.Signer) Option {
+	return func(client *Client) {
+		client.signer = signer
+	}
+}
+
 type Client struct {
 	serverAddress string
 	client        retry.Doer
+	signer        *signature.Signer
 	logger        toolkitlogger.Logger
 }
 
@@ -40,6 +50,7 @@ func NewClient(
 	serverAddress string,
 	client retry.Doer,
 	logger toolkitlogger.Logger,
+	options ...Option,
 ) (*Client, error) {
 	if serverAddress == "" {
 		return nil, errors.Wrap(entities.ErrInvalidParam, "new metrics client. server address is empty")
@@ -60,11 +71,18 @@ func NewClient(
 		return nil, errors.Wrap(entities.ErrInvalidParam, "new metrics client. server address is invalid")
 	}
 
-	return &Client{
+	result := &Client{
 		serverAddress: strings.TrimRight(serverAddress, "/"),
 		client:        client,
 		logger:        logger,
-	}, nil
+	}
+	for _, option := range options {
+		if option != nil {
+			option(result)
+		}
+	}
+
+	return result, nil
 }
 
 func (c *Client) UpdateAgentData(ctx context.Context, metric *entities.Metric) error {
@@ -116,6 +134,8 @@ func (c *Client) postJSON(ctx context.Context, path string, payload any) error {
 		return errors.Wrap(err, "post json. marshal request body")
 	}
 
+	signed := c.sign(body)
+
 	body, err = c.compress(body)
 	if err != nil {
 		return errors.Wrap(err, "post json. compress request body")
@@ -133,6 +153,9 @@ func (c *Client) postJSON(ctx context.Context, path string, payload any) error {
 	req.Header.Set(contentTypeHeader, jsonMediaType)
 	req.Header.Set(contentEncodingHeader, gzipEncoding)
 	req.Header.Set(acceptEncodingHeader, gzipEncoding)
+	if signed != "" {
+		req.Header.Set(signature.Header, signed)
+	}
 
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -145,6 +168,14 @@ func (c *Client) postJSON(ctx context.Context, path string, payload any) error {
 	}
 
 	return c.handleResponseStatus(resp.StatusCode)
+}
+
+func (c *Client) sign(body []byte) string {
+	if c.signer == nil {
+		return ""
+	}
+
+	return c.signer.Sign(body)
 }
 
 func (c *Client) compress(data []byte) ([]byte, error) {
