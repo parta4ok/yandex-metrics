@@ -23,6 +23,7 @@ const (
 	fileStoragePathKey              = "metrics.backup.file_storage_path"
 	restoreKey                      = "metrics.backup.restore"
 	databaseDSNKey                  = "metrics.database.dsn"
+	signatureKeyKey                 = "metrics.signature.key"
 
 	defaultGracefulShutdownTimeout = 5 * time.Second
 	defaultPublicHTTPAddress       = "localhost:8080"
@@ -31,6 +32,7 @@ const (
 	defaultFileStoragePath         = "metrics-storage.json"
 	defaultRestore                 = false
 	defaultDatabaseDSN             = ""
+	defaultSignatureKey            = ""
 
 	configPathEnv        = "METRIC_CONFIG_PATH"
 	defaultConfigPath    = "config/metrics.yml"
@@ -78,6 +80,7 @@ func (c *Config) setDefaults() error {
 		fileStoragePathKey:         defaultFileStoragePath,
 		restoreKey:                 defaultRestore,
 		databaseDSNKey:             defaultDatabaseDSN,
+		signatureKeyKey:            defaultSignatureKey,
 	}
 	for key, value := range defaults {
 		if err := c.set(key, value); err != nil {
@@ -136,6 +139,11 @@ func (c *Config) applyFlags(flags *cliFlags) error {
 			return err
 		}
 	}
+	if flags.isSet(signatureKeyFlag) {
+		if err := c.set(signatureKeyKey, flags.signatureKey); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -171,6 +179,11 @@ func (c *Config) applyEnviron(env environ) error {
 	}
 	if dsn, ok := env.lookup(databaseDSNEnv); ok {
 		if err := c.set(databaseDSNKey, dsn); err != nil {
+			return err
+		}
+	}
+	if key, ok := env.lookup(signatureKeyEnv); ok {
+		if err := c.set(signatureKeyKey, key); err != nil {
 			return err
 		}
 	}
@@ -243,4 +256,8 @@ func (c *Config) Restore() bool {
 
 func (c *Config) DatabaseDSN() string {
 	return c.settings.String(databaseDSNKey)
+}
+
+func (c *Config) SignatureKey() string {
+	return c.settings.String(signatureKeyKey)
 }

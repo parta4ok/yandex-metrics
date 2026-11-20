@@ -16,6 +16,7 @@ import (
 	"github.com/parta4ok/yandex-metrics/agent/internal/entities"
 	"github.com/parta4ok/yandex-metrics/toolkit/logger/noop"
 	"github.com/parta4ok/yandex-metrics/toolkit/retry"
+	"github.com/parta4ok/yandex-metrics/toolkit/signature"
 	"github.com/stretchr/testify/require"
 )
 
@@ -302,4 +303,89 @@ func TestClient_UpdateAgentDataBatch_ServerIsDown(t *testing.T) {
 	err = client.UpdateAgentDataBatch(context.Background(), []*entities.Metric{gaugeMetric(t, 1.5)})
 
 	require.Error(t, err)
+}
+
+func TestClient_Signature(t *testing.T) {
+	t.Parallel()
+
+	signer, err := signature.NewSigner("secret")
+	require.NoError(t, err)
+
+	tests := []struct {
+		name       string
+		options    []adapter.Option
+		call       func(client *adapter.Client) error
+		wantBody   string
+		wantSigned bool
+	}{
+		{
+			name:    "single metric with signer",
+			options: []adapter.Option{adapter.WithSigner(signer)},
+			call: func(client *adapter.Client) error {
+				return client.UpdateAgentData(context.Background(), gaugeMetric(t, 1.5))
+			},
+			wantBody:   `{"id":"Alloc","type":"gauge","value":1.5}`,
+			wantSigned: true,
+		},
+		{
+			name:    "batch with signer",
+			options: []adapter.Option{adapter.WithSigner(signer)},
+			call: func(client *adapter.Client) error {
+				return client.UpdateAgentDataBatch(context.Background(), []*entities.Metric{gaugeMetric(t, 1.5), counterMetric(t, 42)})
+			},
+			wantBody:   `[{"id":"Alloc","type":"gauge","value":1.5},{"id":"PollCount","type":"counter","delta":42}]`,
+			wantSigned: true,
+		},
+		{
+			name: "no signer",
+			call: func(client *adapter.Client) error {
+				return client.UpdateAgentDataBatch(context.Background(), []*entities.Metric{gaugeMetric(t, 1.5)})
+			},
+			wantBody: `[{"id":"Alloc","type":"gauge","value":1.5}]`,
+		},
+		{
+			name:    "nil option is ignored",
+			options: []adapter.Option{nil},
+			call: func(client *adapter.Client) error {
+				return client.UpdateAgentDataBatch(context.Background(), []*entities.Metric{gaugeMetric(t, 1.5)})
+			},
+			wantBody: `[{"id":"Alloc","type":"gauge","value":1.5}]`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var called bool
+			client, err := adapter.NewClient("http://metrics.example/", doerFunc(func(req *http.Request) (*http.Response, error) {
+				called = true
+
+				reader, err := gzip.NewReader(req.Body)
+				require.NoError(t, err)
+				body, err := io.ReadAll(reader)
+				require.NoError(t, err)
+				require.JSONEq(t, tt.wantBody, string(body))
+
+				header := req.Header.Get(signature.Header)
+				if tt.wantSigned {
+					require.Equal(t, signer.Sign(body), header)
+				} else {
+					require.Empty(t, header)
+				}
+
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewBufferString("")), Header: make(http.Header)}, nil
+			}), noop.New(), tt.options...)
+			require.NoError(t, err)
+
+			require.NoError(t, tt.call(client))
+			require.True(t, called)
+		})
+	}
+}
+
+type doerFunc func(req *http.Request) (*http.Response, error)
+
+func (fn doerFunc) Do(req *http.Request) (*http.Response, error) {
+	return fn(req)
 }

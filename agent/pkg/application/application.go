@@ -19,6 +19,7 @@ import (
 	toolkitlogger "github.com/parta4ok/yandex-metrics/toolkit/logger"
 	"github.com/parta4ok/yandex-metrics/toolkit/logger/zaplog"
 	"github.com/parta4ok/yandex-metrics/toolkit/retry"
+	"github.com/parta4ok/yandex-metrics/toolkit/signature"
 )
 
 type Application struct {
@@ -107,7 +108,17 @@ func (app *Application) buildMetricServiceClient() error {
 		return errors.Wrap(err, "build metrics service client. create retry client")
 	}
 
-	client, err := metricsclient.NewClient(app.MetricsHTTPAddress(), retryClient, app.logger)
+	var options []metricsclient.Option
+	if app.SignatureKey() != "" {
+		signer, err := signature.NewSigner(app.SignatureKey())
+		if err != nil {
+			return errors.Wrap(err, "build metrics service client. create signer")
+		}
+
+		options = append(options, metricsclient.WithSigner(signer))
+	}
+
+	client, err := metricsclient.NewClient(app.MetricsHTTPAddress(), retryClient, app.logger, options...)
 	if err != nil {
 		return errors.Wrap(err, "build metrics service client. create client")
 	}
