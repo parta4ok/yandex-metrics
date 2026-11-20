@@ -21,6 +21,7 @@ import (
 	toolkitlogger "github.com/parta4ok/yandex-metrics/toolkit/logger"
 	"github.com/parta4ok/yandex-metrics/toolkit/middleware"
 	unconfiguredpinger "github.com/parta4ok/yandex-metrics/toolkit/pinger/unconfigured"
+	"github.com/parta4ok/yandex-metrics/toolkit/signature"
 )
 
 const (
@@ -54,6 +55,7 @@ type Server struct {
 	httpServer      *http.Server
 	certificateFile string
 	keyFile         string
+	signatureKey    string
 	logger          toolkitlogger.Logger
 }
 
@@ -63,6 +65,12 @@ func WithTLS(certificateFile string, keyFile string) Option {
 	return func(server *Server) {
 		server.certificateFile = certificateFile
 		server.keyFile = keyFile
+	}
+}
+
+func WithSignature(key string) Option {
+	return func(server *Server) {
+		server.signatureKey = key
 	}
 }
 
@@ -100,8 +108,16 @@ func NewServer(
 		return nil, errors.Wrap(entities.ErrInvalidParam, "new http server. TLS certificate and key are required")
 	}
 
+	var signer *signature.Signer
+	if server.signatureKey != "" {
+		var err error
+		if signer, err = signature.NewSigner(server.signatureKey); err != nil {
+			return nil, errors.Wrap(entities.ErrInvalidParam, "new http server. signature key is invalid")
+		}
+	}
+
 	router := chi.NewRouter()
-	router.Use(middleware.Logging(logger), middleware.Compressing())
+	router.Use(middleware.Logging(logger), middleware.Compressing(), middleware.Signing(signer))
 	server.registerRoutes(router)
 	server.handler = router
 
