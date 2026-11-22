@@ -11,6 +11,10 @@ type MetricsHTTPClientConfig interface {
 	MetricsHTTPTimeout() time.Duration
 }
 
+type RateLimitConfig interface {
+	RateLimit() int
+}
+
 type TickerConfig interface {
 	PollInterval() time.Duration
 	ReportInterval() time.Duration
@@ -20,5 +24,6 @@ type ConfigProvider interface {
 	toolkitconfig.GracefulStopConfig
 	toolkitconfig.SignatureConfig
 	MetricsHTTPClientConfig
+	RateLimitConfig
 	TickerConfig
 }

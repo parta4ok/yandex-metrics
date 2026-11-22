@@ -19,6 +19,7 @@ const (
 	reportIntervalKey          = "agent.ticker.report_interval"
 	metricsHTTPAddressKey      = "agent.http.metrics.address"
 	metricsHTTPTimeoutKey      = "agent.http.metrics.timeout"
+	rateLimitKey               = "agent.http.metrics.rate_limit"
 	signatureKeyKey            = "agent.signature.key"
 
 	defaultGracefulShutdownTimeout = 5 * time.Second
@@ -26,6 +27,7 @@ const (
 	defaultReportInterval          = 10 * time.Second
 	defaultMetricsHTTPAddress      = "localhost:8080"
 	defaultMetricsHTTPTimeout      = 5 * time.Second
+	defaultRateLimit               = 1
 	defaultSignatureKey            = ""
 
 	configPathEnv        = "METRIC_CONFIG_PATH"
@@ -72,6 +74,7 @@ func (c *Config) setDefaults() error {
 		reportIntervalKey:          defaultReportInterval,
 		metricsHTTPAddressKey:      defaultMetricsHTTPAddress,
 		metricsHTTPTimeoutKey:      defaultMetricsHTTPTimeout,
+		rateLimitKey:               defaultRateLimit,
 		signatureKeyKey:            defaultSignatureKey,
 	}
 	for key, value := range defaults {
@@ -116,6 +119,11 @@ func (c *Config) applyFlags(flags *cliFlags) error {
 			return err
 		}
 	}
+	if flags.isSet(rateLimitFlag) {
+		if err := c.set(rateLimitKey, flags.rateLimit); err != nil {
+			return err
+		}
+	}
 	if flags.isSet(reportIntervalFlag) {
 		if err := c.set(reportIntervalKey, time.Duration(flags.reportInterval)*time.Second); err != nil {
 			return err
@@ -138,6 +146,15 @@ func (c *Config) applyEnviron(env environ) error {
 	}
 	if key, ok := env.lookup(signatureKeyEnv); ok {
 		if err := c.set(signatureKeyKey, key); err != nil {
+			return err
+		}
+	}
+	if value, ok := env.lookup(rateLimitEnv); ok {
+		limit, err := strconv.Atoi(value)
+		if err != nil {
+			return errors.Wrapf(entities.ErrInvalidParam, "%s must be a whole number", rateLimitEnv)
+		}
+		if err := c.set(rateLimitKey, limit); err != nil {
 			return err
 		}
 	}
@@ -168,6 +185,9 @@ func (c *Config) validate() error {
 		if c.settings.Duration(key) <= 0 {
 			return errors.Wrapf(entities.ErrInvalidParam, "%s must be a positive duration", key)
 		}
+	}
+	if c.settings.Int(rateLimitKey) <= 0 {
+		return errors.Wrapf(entities.ErrInvalidParam, "%s must be a positive whole number", rateLimitKey)
 	}
 
 	return nil
@@ -212,4 +232,8 @@ func (c *Config) MetricsHTTPTimeout() time.Duration {
 
 func (c *Config) SignatureKey() string {
 	return c.settings.String(signatureKeyKey)
+}
+
+func (c *Config) RateLimit() int {
+	return c.settings.Int(rateLimitKey)
 }

@@ -8,5 +8,6 @@ agent:
     metrics:
       address: "localhost:8080"
       timeout: 5s
+      rate_limit: 1
   signature:
     key: ""
