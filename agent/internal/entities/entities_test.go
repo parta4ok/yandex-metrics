@@ -41,6 +41,18 @@ func TestMName(t *testing.T) {
 		{name: "runtime gauge", metricName: entities.Alloc, valid: true, mType: entities.Gauge},
 		{name: "counter", metricName: entities.PollCount, valid: true, mType: entities.Counter},
 		{name: "random gauge", metricName: entities.RandomValue, valid: true, mType: entities.Gauge},
+		{name: "total memory", metricName: entities.TotalMemory, valid: true, mType: entities.Gauge},
+		{name: "free memory", metricName: entities.FreeMemory, valid: true, mType: entities.Gauge},
+		{name: "first cpu", metricName: "CPUutilization1", valid: true, mType: entities.Gauge},
+		{name: "many cpus", metricName: "CPUutilization128", valid: true, mType: entities.Gauge},
+		{name: "cpu without index", metricName: "CPUutilization"},
+		{name: "cpu zero index", metricName: "CPUutilization0"},
+		{name: "cpu negative index", metricName: "CPUutilization-1"},
+		{name: "cpu leading zero", metricName: "CPUutilization01"},
+		{name: "cpu plus sign", metricName: "CPUutilization+1"},
+		{name: "cpu not a number", metricName: "CPUutilizationX"},
+		{name: "cpu with suffix", metricName: "CPUutilization1x"},
+		{name: "cpu wrong case", metricName: "cpuutilization1"},
 		{name: "invalid", metricName: "invalid"},
 	}
 
@@ -346,4 +358,53 @@ func newMetric(t *testing.T, name entities.MName) *entities.Metric {
 	require.NoError(t, err)
 
 	return metric
+}
+
+func TestNewCPUUtilization(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		index   int
+		want    entities.MName
+		wantErr error
+	}{
+		{name: "first", index: 1, want: "CPUutilization1"},
+		{name: "tenth", index: 10, want: "CPUutilization10"},
+		{name: "zero", index: 0, wantErr: entities.ErrInvalidParam},
+		{name: "negative", index: -3, wantErr: entities.ErrInvalidParam},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := entities.NewCPUUtilization(tt.index)
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+				return
+			}
+
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+			require.True(t, got.IsValid())
+			require.Equal(t, entities.Gauge, got.MType())
+		})
+	}
+}
+
+func TestMetrics_UpdateGaugeWithSystemNames(t *testing.T) {
+	t.Parallel()
+
+	cpu, err := entities.NewCPUUtilization(2)
+	require.NoError(t, err)
+
+	metrics := entities.NewMetrics()
+	require.NoError(t, metrics.UpdateGauge(entities.TotalMemory, 100))
+	require.NoError(t, metrics.UpdateGauge(entities.FreeMemory, 40))
+	require.NoError(t, metrics.UpdateGauge(cpu, 12.5))
+
+	all, err := metrics.All()
+	require.NoError(t, err)
+	require.Len(t, all, 3)
 }
