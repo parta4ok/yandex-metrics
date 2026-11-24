@@ -5,8 +5,12 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/pkg/errors"
+
 	"github.com/parta4ok/yandex-metrics/toolkit/signature"
 )
+
+const MaxSignedBodyBytes = 1 << 20
 
 type signingWriter struct {
 	http.ResponseWriter
@@ -47,35 +51,44 @@ type signing struct {
 	signer *signature.Signer
 }
 
-func (s *signing) verifyRequest(req *http.Request) bool {
-	received := req.Header.Get(signature.Header)
-	if received == "" {
-		return true
+func (s *signing) verifyRequest(resp http.ResponseWriter, req *http.Request) int {
+	values, ok := req.Header[http.CanonicalHeaderKey(signature.Header)]
+	if !ok {
+		return http.StatusOK
 	}
 
 	var body []byte
 	if req.Body != nil {
 		var err error
-		if body, err = io.ReadAll(req.Body); err != nil {
-			return false
+		if body, err = io.ReadAll(http.MaxBytesReader(resp, req.Body, MaxSignedBodyBytes)); err != nil {
+			var tooLarge *http.MaxBytesError
+			if errors.As(err, &tooLarge) {
+				return http.StatusRequestEntityTooLarge
+			}
+
+			return http.StatusBadRequest
 		}
 	}
 	req.Body = io.NopCloser(bytes.NewReader(body))
 
-	return s.signer.Verify(body, received)
+	if !s.signer.Verify(body, values[0]) {
+		return http.StatusBadRequest
+	}
+
+	return http.StatusOK
 }
 
 func (s *signing) handle(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
 		writer := newSigningWriter(resp, s.signer)
-		defer writer.flush()
 
-		if !s.verifyRequest(req) {
-			http.Error(writer, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-			return
+		if status := s.verifyRequest(resp, req); status != http.StatusOK {
+			http.Error(writer, http.StatusText(status), status)
+		} else {
+			next.ServeHTTP(writer, req)
 		}
 
-		next.ServeHTTP(writer, req)
+		writer.flush()
 	})
 }
 

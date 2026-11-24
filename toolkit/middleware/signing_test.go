@@ -249,3 +249,96 @@ func TestSigning_WithCompressionRejectsSignatureOfCompressedBody(t *testing.T) {
 	require.False(t, called)
 	require.Equal(t, http.StatusBadRequest, resp.Code)
 }
+
+func TestSigning_EmptyHeaderIsRejected(t *testing.T) {
+	t.Parallel()
+
+	signer := newTestSigner(t)
+	var called bool
+	handler := middleware.Signing(signer)(newEchoHandler(t, &called))
+
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(signingBody))
+	req.Header.Set(signature.Header, "")
+	resp := httptest.NewRecorder()
+	handler.ServeHTTP(resp, req)
+
+	require.False(t, called)
+	require.Equal(t, http.StatusBadRequest, resp.Code)
+}
+
+func TestSigning_BodySizeLimit(t *testing.T) {
+	t.Parallel()
+
+	signer := newTestSigner(t)
+
+	tests := []struct {
+		name       string
+		size       int
+		wantStatus int
+		wantCalled bool
+	}{
+		{name: "exactly at the limit", size: middleware.MaxSignedBodyBytes, wantStatus: http.StatusOK, wantCalled: true},
+		{name: "over the limit", size: middleware.MaxSignedBodyBytes + 1, wantStatus: http.StatusRequestEntityTooLarge},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var called bool
+			handler := middleware.Signing(signer)(newEchoHandler(t, &called))
+
+			body := bytes.Repeat([]byte("a"), tt.size)
+			req := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(body))
+			req.Header.Set(signature.Header, signer.Sign(body))
+			resp := httptest.NewRecorder()
+			handler.ServeHTTP(resp, req)
+
+			require.Equal(t, tt.wantStatus, resp.Code)
+			require.Equal(t, tt.wantCalled, called)
+			require.True(t, signer.Verify(resp.Body.Bytes(), resp.Header().Get(signature.Header)))
+		})
+	}
+}
+
+func TestSigning_LimitsDecompressedBody(t *testing.T) {
+	t.Parallel()
+
+	signer := newTestSigner(t)
+	var called bool
+	handler := middleware.Compressing()(middleware.Signing(signer)(newEchoHandler(t, &called)))
+
+	huge := bytes.Repeat([]byte("a"), 4*middleware.MaxSignedBodyBytes)
+	var compressed bytes.Buffer
+	writer := gzip.NewWriter(&compressed)
+	_, err := writer.Write(huge)
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+	require.Less(t, compressed.Len(), middleware.MaxSignedBodyBytes)
+
+	req := httptest.NewRequest(http.MethodPost, "/", &compressed)
+	req.Header.Set("Content-Encoding", "gzip")
+	req.Header.Set(signature.Header, signer.Sign(huge))
+	resp := httptest.NewRecorder()
+	handler.ServeHTTP(resp, req)
+
+	require.False(t, called)
+	require.Equal(t, http.StatusRequestEntityTooLarge, resp.Code)
+}
+
+func TestSigning_PanicIsNotMasked(t *testing.T) {
+	t.Parallel()
+
+	signer := newTestSigner(t)
+	handler := middleware.Signing(signer)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		panic("handler failed")
+	}))
+
+	resp := httptest.NewRecorder()
+
+	require.PanicsWithValue(t, "handler failed", func() {
+		handler.ServeHTTP(resp, httptest.NewRequest(http.MethodGet, "/", nil))
+	})
+	require.Empty(t, resp.Header().Get(signature.Header))
+	require.Empty(t, resp.Body.String())
+}
