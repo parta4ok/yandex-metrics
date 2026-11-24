@@ -429,22 +429,31 @@ func TestAgentService_SendMetrics_SplitsIntoChunks(t *testing.T) {
 func TestAgentService_SendMetrics_RespectsRateLimit(t *testing.T) {
 	t.Parallel()
 
+	const (
+		chunkCount = 5
+		guard      = 5 * time.Second
+	)
+
 	tests := []struct {
 		name      string
 		rateLimit int
-		wantMax   int32
 	}{
-		{name: "limit one", rateLimit: 1, wantMax: 1},
-		{name: "limit two", rateLimit: 2, wantMax: 2},
-		{name: "limit above chunk count", rateLimit: 10, wantMax: 5},
+		{name: "limit one", rateLimit: 1},
+		{name: "limit two", rateLimit: 2},
+		{name: "limit above chunk count", rateLimit: 10},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
+			wantPeak := min(tt.rateLimit, chunkCount)
+
 			service, client, _, _, storage := newServiceWithRateLimit(t, tt.rateLimit)
-			storage.EXPECT().GetAgentData(gomock.Any()).Return(cpuMetrics(t, 50), nil)
+			storage.EXPECT().GetAgentData(gomock.Any()).Return(cpuMetrics(t, 10*chunkCount), nil)
+
+			entered := make(chan struct{}, chunkCount)
+			release := make(chan struct{})
 
 			var current, peak atomic.Int32
 			client.EXPECT().
@@ -459,15 +468,45 @@ func TestAgentService_SendMetrics_RespectsRateLimit(t *testing.T) {
 							break
 						}
 					}
-					time.Sleep(40 * time.Millisecond)
+
+					entered <- struct{}{}
+
+					select {
+					case <-release:
+					case <-time.After(guard):
+					}
 
 					return nil
 				}).
-				Times(5)
+				Times(chunkCount)
 
-			require.NoError(t, service.SendMetrics(context.Background()))
+			done := make(chan error, 1)
+			go func() { done <- service.SendMetrics(context.Background()) }()
 
-			require.Equal(t, tt.wantMax, peak.Load())
+			for range wantPeak {
+				select {
+				case <-entered:
+				case <-time.After(guard):
+					t.Fatal("workers did not start")
+				}
+			}
+
+			select {
+			case <-entered:
+				t.Fatalf("more than %d concurrent requests", wantPeak)
+			case <-time.After(100 * time.Millisecond):
+			}
+
+			close(release)
+
+			select {
+			case err := <-done:
+				require.NoError(t, err)
+			case <-time.After(guard):
+				t.Fatal("send metrics did not finish")
+			}
+
+			require.Equal(t, int32(wantPeak), peak.Load())
 		})
 	}
 }
