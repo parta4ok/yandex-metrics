@@ -154,6 +154,8 @@ func TestNewConfig_InvalidValues(t *testing.T) {
 
 	path := writeConfig(t, "agent: {}\n")
 	brokenPath := writeConfig(t, "agent:\n  ticker:\n    poll_interval: 0s\n")
+	brokenRateLimitPath := writeConfig(t, "agent:\n  http:\n    metrics:\n      rate_limit: 0\n")
+	textRateLimitPath := writeConfig(t, "agent:\n  http:\n    metrics:\n      rate_limit: many\n")
 
 	tests := []struct {
 		name    string
@@ -166,6 +168,16 @@ func TestNewConfig_InvalidValues(t *testing.T) {
 		{name: "env interval is fractional", environ: []string{"POLL_INTERVAL=1.5"}},
 		{name: "flag interval is not a number", args: []string{"-p", "abc"}},
 		{name: "flag interval is zero", args: []string{"-r", "0"}},
+		{name: "env rate limit is not a number", environ: []string{"RATE_LIMIT=abc"}},
+		{name: "env rate limit is fractional", environ: []string{"RATE_LIMIT=1.5"}},
+		{name: "env rate limit is zero", environ: []string{"RATE_LIMIT=0"}},
+		{name: "env rate limit is negative", environ: []string{"RATE_LIMIT=-2"}},
+		{name: "env rate limit is empty", environ: []string{"RATE_LIMIT="}},
+		{name: "flag rate limit is not a number", args: []string{"-l", "abc"}},
+		{name: "flag rate limit is zero", args: []string{"-l", "0"}},
+		{name: "flag rate limit is negative", args: []string{"-l", "-1"}},
+		{name: "file rate limit is zero", args: []string{"-config", brokenRateLimitPath}},
+		{name: "file rate limit is not a number", args: []string{"-config", textRateLimitPath}},
 		{name: "unknown flag", args: []string{"-x"}},
 		{name: "unexpected argument", args: []string{"extra"}},
 		{name: "file interval is not positive", args: []string{"-config", brokenPath}},
@@ -185,4 +197,64 @@ func TestNewConfig_InvalidValues(t *testing.T) {
 			require.Nil(t, loadedConfig)
 		})
 	}
+}
+
+func TestNewConfig_SignatureKey(t *testing.T) {
+	t.Parallel()
+
+	path := writeConfig(t, `
+agent:
+  signature:
+    key: file-key
+`)
+
+	fromFile, err := config.NewConfig([]string{"-config", path}, nil)
+	require.NoError(t, err)
+	require.Equal(t, "file-key", fromFile.SignatureKey())
+
+	fromFlag, err := config.NewConfig([]string{"-config", path, "-k", "flag-key"}, nil)
+	require.NoError(t, err)
+	require.Equal(t, "flag-key", fromFlag.SignatureKey())
+
+	fromEnviron, err := config.NewConfig(
+		[]string{"-config", path, "-k", "flag-key"},
+		[]string{"KEY=env-key"},
+	)
+	require.NoError(t, err)
+	require.Equal(t, "env-key", fromEnviron.SignatureKey())
+
+	emptyEnviron, err := config.NewConfig([]string{"-config", path}, []string{"KEY="})
+	require.NoError(t, err)
+	require.Empty(t, emptyEnviron.SignatureKey())
+
+	disabled, err := config.NewConfig([]string{"-config", writeConfig(t, "agent: {}\n")}, nil)
+	require.NoError(t, err)
+	require.Empty(t, disabled.SignatureKey())
+}
+
+func TestNewConfig_RateLimit(t *testing.T) {
+	t.Parallel()
+
+	path := writeConfig(t, `
+agent:
+  http:
+    metrics:
+      rate_limit: 3
+`)
+
+	fromFile, err := config.NewConfig([]string{"-config", path}, nil)
+	require.NoError(t, err)
+	require.Equal(t, 3, fromFile.RateLimit())
+
+	fromFlag, err := config.NewConfig([]string{"-config", path, "-l", "5"}, nil)
+	require.NoError(t, err)
+	require.Equal(t, 5, fromFlag.RateLimit())
+
+	fromEnviron, err := config.NewConfig([]string{"-config", path, "-l", "5"}, []string{"RATE_LIMIT=7"})
+	require.NoError(t, err)
+	require.Equal(t, 7, fromEnviron.RateLimit())
+
+	byDefault, err := config.NewConfig([]string{"-config", writeConfig(t, "agent: {}\n")}, nil)
+	require.NoError(t, err)
+	require.Equal(t, 1, byDefault.RateLimit())
 }

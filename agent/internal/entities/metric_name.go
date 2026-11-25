@@ -1,5 +1,14 @@
 package entities
 
+import (
+	"strconv"
+	"strings"
+
+	"github.com/pkg/errors"
+)
+
+const cpuUtilizationPrefix = "CPUutilization"
+
 type MName string
 
 const (
@@ -32,6 +41,8 @@ const (
 	TotalAlloc    MName = "TotalAlloc"
 	PollCount     MName = "PollCount"
 	RandomValue   MName = "RandomValue"
+	TotalMemory   MName = "TotalMemory"
+	FreeMemory    MName = "FreeMemory"
 )
 
 func (m MName) IsValid() bool {
@@ -64,11 +75,32 @@ func (m MName) IsValid() bool {
 		Sys,
 		TotalAlloc,
 		PollCount,
-		RandomValue:
+		RandomValue,
+		TotalMemory,
+		FreeMemory:
 		return true
 	default:
+		return m.isCPUUtilization()
+	}
+}
+
+func NewCPUUtilization(index int) (MName, error) {
+	if index <= 0 {
+		return "", errors.Wrap(ErrInvalidParam, "new cpu utilization. index is not positive")
+	}
+
+	return MName(cpuUtilizationPrefix + strconv.Itoa(index)), nil
+}
+
+func (m MName) isCPUUtilization() bool {
+	index, found := strings.CutPrefix(string(m), cpuUtilizationPrefix)
+	if !found {
 		return false
 	}
+
+	value, err := strconv.Atoi(index)
+
+	return err == nil && value > 0 && strconv.Itoa(value) == index
 }
 
 func (m MName) MType() MType {

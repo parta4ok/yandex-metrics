@@ -2,6 +2,7 @@ package cases
 
 import (
 	"context"
+	"sync"
 
 	"github.com/pkg/errors"
 
@@ -9,17 +10,28 @@ import (
 	toolkitlogger "github.com/parta4ok/yandex-metrics/toolkit/logger"
 )
 
+const sendChunkSize = 10
+
 type AgentService struct {
 	metricServiceClient MetricServiceClient
 	dataProvider        DataProvider
+	systemDataProvider  SystemDataProvider
 	storage             Storage
+	rateLimit           int
 	logger              toolkitlogger.Logger
+}
+
+type sendResult struct {
+	metrics []*entities.Metric
+	err     error
 }
 
 func NewAgentService(
 	metricServiceClient MetricServiceClient,
 	dataProvider DataProvider,
+	systemDataProvider SystemDataProvider,
 	storage Storage,
+	rateLimit int,
 	logger toolkitlogger.Logger,
 ) (*AgentService, error) {
 	if metricServiceClient == nil {
@@ -28,8 +40,14 @@ func NewAgentService(
 	if dataProvider == nil {
 		return nil, errors.Wrap(entities.ErrInvalidParam, "new agent service. data provider is nil")
 	}
+	if systemDataProvider == nil {
+		return nil, errors.Wrap(entities.ErrInvalidParam, "new agent service. system data provider is nil")
+	}
 	if storage == nil {
 		return nil, errors.Wrap(entities.ErrInvalidParam, "new agent service. storage is nil")
+	}
+	if rateLimit <= 0 {
+		return nil, errors.Wrap(entities.ErrInvalidParam, "new agent service. rate limit is not positive")
 	}
 	if logger == nil {
 		return nil, errors.Wrap(entities.ErrInvalidParam, "new agent service. logger is nil")
@@ -38,7 +56,9 @@ func NewAgentService(
 	return &AgentService{
 		metricServiceClient: metricServiceClient,
 		dataProvider:        dataProvider,
+		systemDataProvider:  systemDataProvider,
 		storage:             storage,
+		rateLimit:           rateLimit,
 		logger:              logger,
 	}, nil
 }
@@ -57,6 +77,24 @@ func (s *AgentService) UpdateMetrics(ctx context.Context) error {
 	}
 	if err := s.storage.IncrementCounter(ctx, entities.PollCount, 1); err != nil {
 		return errors.Wrap(err, "update metrics. increment poll count")
+	}
+
+	return nil
+}
+
+func (s *AgentService) UpdateSystemMetrics(ctx context.Context) error {
+	systemMetrics, err := s.systemDataProvider.GetSystemData(ctx)
+	if err != nil {
+		s.logger.Warn("update system metrics. get system data failed", "error", err)
+
+		return nil
+	}
+
+	if err := s.updateMetrics(systemMetrics); err != nil {
+		return errors.Wrap(err, "update system metrics. validate system data")
+	}
+	if err := s.storage.UpdateGauges(ctx, systemMetrics); err != nil {
+		return errors.Wrap(err, "update system metrics. update gauges")
 	}
 
 	return nil
@@ -107,18 +145,73 @@ func (s *AgentService) sendMetrics(ctx context.Context, metrics *entities.Metric
 		return errors.Wrap(entities.ErrEmptyBatch, "send metrics. nothing to send")
 	}
 
-	if err := s.metricServiceClient.UpdateAgentDataBatch(ctx, metricList); err != nil {
-		s.logger.Warn("send metrics. update batch failed", "error", err)
+	chunks := s.splitMetrics(metricList)
+	jobs := make(chan []*entities.Metric)
+	results := make(chan sendResult, len(chunks))
 
-		return nil
+	var wg sync.WaitGroup
+	for range min(s.rateLimit, len(chunks)) {
+		wg.Add(1)
+		go s.sendWorker(ctx, &wg, jobs, results)
 	}
 
-	for _, metric := range metricList {
+enqueue:
+	for _, chunk := range chunks {
+		select {
+		case jobs <- chunk:
+		case <-ctx.Done():
+			break enqueue
+		}
+	}
+	close(jobs)
+	wg.Wait()
+	close(results)
+
+	for result := range results {
+		if result.err != nil {
+			s.logger.Warn("send metrics. update batch failed", "error", result.err)
+			continue
+		}
+		if err := s.acknowledgeCounters(ctx, result.metrics); err != nil {
+			return errors.Wrap(err, "send metrics. acknowledge counters")
+		}
+	}
+
+	return nil
+}
+
+func (s *AgentService) sendWorker(
+	ctx context.Context,
+	wg *sync.WaitGroup,
+	jobs <-chan []*entities.Metric,
+	results chan<- sendResult,
+) {
+	defer wg.Done()
+
+	for chunk := range jobs {
+		results <- sendResult{
+			metrics: chunk,
+			err:     s.metricServiceClient.UpdateAgentDataBatch(ctx, chunk),
+		}
+	}
+}
+
+func (s *AgentService) splitMetrics(metrics []*entities.Metric) [][]*entities.Metric {
+	chunks := make([][]*entities.Metric, 0, (len(metrics)+sendChunkSize-1)/sendChunkSize)
+	for start := 0; start < len(metrics); start += sendChunkSize {
+		chunks = append(chunks, metrics[start:min(start+sendChunkSize, len(metrics))])
+	}
+
+	return chunks
+}
+
+func (s *AgentService) acknowledgeCounters(ctx context.Context, metrics []*entities.Metric) error {
+	for _, metric := range metrics {
 		if metric.MType() != entities.Counter {
 			continue
 		}
 		if err := s.storage.AcknowledgeCounter(ctx, metric.Name(), *metric.Delta()); err != nil {
-			return errors.Wrap(err, "send metrics. acknowledge counter")
+			return err
 		}
 	}
 

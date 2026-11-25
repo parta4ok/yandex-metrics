@@ -8,6 +8,7 @@ const (
 	fileStoragePathEnv = "FILE_STORAGE_PATH"
 	restoreEnv         = "RESTORE"
 	databaseDSNEnv     = "DATABASE_DSN"
+	signatureKeyEnv    = "KEY"
 )
 
 type environ map[string]string

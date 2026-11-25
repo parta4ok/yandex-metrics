@@ -15,6 +15,7 @@ const (
 	fileStoragePathFlag = "f"
 	restoreFlag         = "r"
 	databaseDSNFlag     = "d"
+	signatureKeyFlag    = "k"
 )
 
 type cliFlags struct {
@@ -26,6 +27,7 @@ type cliFlags struct {
 	fileStoragePath string
 	restore         bool
 	databaseDSN     string
+	signatureKey    string
 }
 
 func newCLIFlags() *cliFlags {
@@ -55,6 +57,7 @@ func newCLIFlags() *cliFlags {
 		"restore metrics from the backup file on start (default false)",
 	)
 	flags.set.StringVar(&flags.databaseDSN, databaseDSNFlag, "", "database connection string (default empty)")
+	flags.set.StringVar(&flags.signatureKey, signatureKeyFlag, "", "signature key, empty disables signing (default empty)")
 
 	return flags
 }

@@ -14,17 +14,20 @@ import (
 	metricprovider "github.com/parta4ok/yandex-metrics/agent/internal/adapter/metric"
 	metricsclient "github.com/parta4ok/yandex-metrics/agent/internal/adapter/metrics"
 	"github.com/parta4ok/yandex-metrics/agent/internal/adapter/storage/inmemory"
+	systemprovider "github.com/parta4ok/yandex-metrics/agent/internal/adapter/system"
 	"github.com/parta4ok/yandex-metrics/agent/internal/cases"
 	"github.com/parta4ok/yandex-metrics/agent/internal/entities"
 	toolkitlogger "github.com/parta4ok/yandex-metrics/toolkit/logger"
 	"github.com/parta4ok/yandex-metrics/toolkit/logger/zaplog"
 	"github.com/parta4ok/yandex-metrics/toolkit/retry"
+	"github.com/parta4ok/yandex-metrics/toolkit/signature"
 )
 
 type Application struct {
 	ConfigProvider
 	storage             cases.Storage
 	dataProvider        cases.DataProvider
+	systemDataProvider  cases.SystemDataProvider
 	metricServiceClient cases.MetricServiceClient
 	service             AgentServiceProvider
 	startStoppers       []StartStopper
@@ -97,6 +100,7 @@ func (app *Application) buildStorage() {
 
 func (app *Application) buildDataProvider() {
 	app.dataProvider = metricprovider.NewAgent(app.logger)
+	app.systemDataProvider = systemprovider.NewProvider()
 }
 
 func (app *Application) buildMetricServiceClient() error {
@@ -107,7 +111,17 @@ func (app *Application) buildMetricServiceClient() error {
 		return errors.Wrap(err, "build metrics service client. create retry client")
 	}
 
-	client, err := metricsclient.NewClient(app.MetricsHTTPAddress(), retryClient, app.logger)
+	var options []metricsclient.Option
+	if app.SignatureKey() != "" {
+		signer, err := signature.NewSigner(app.SignatureKey())
+		if err != nil {
+			return errors.Wrap(err, "build metrics service client. create signer")
+		}
+
+		options = append(options, metricsclient.WithSigner(signer))
+	}
+
+	client, err := metricsclient.NewClient(app.MetricsHTTPAddress(), retryClient, app.logger, options...)
 	if err != nil {
 		return errors.Wrap(err, "build metrics service client. create client")
 	}
@@ -121,7 +135,9 @@ func (app *Application) buildService() error {
 	service, err := cases.NewAgentService(
 		app.metricServiceClient,
 		app.dataProvider,
+		app.systemDataProvider,
 		app.storage,
+		app.RateLimit(),
 		app.logger,
 	)
 	if err != nil {
@@ -139,12 +155,17 @@ func (app *Application) buildTickers() error {
 		return errors.Wrap(err, "build tickers. create poll ticker")
 	}
 
+	systemPollTicker, err := NewTicker(app.PollInterval(), app.service.UpdateSystemMetrics)
+	if err != nil {
+		return errors.Wrap(err, "build tickers. create system poll ticker")
+	}
+
 	reportTicker, err := NewTicker(app.ReportInterval(), app.service.SendMetrics)
 	if err != nil {
 		return errors.Wrap(err, "build tickers. create report ticker")
 	}
 
-	app.startStoppers = append(app.startStoppers, pollTicker, reportTicker)
+	app.startStoppers = append(app.startStoppers, pollTicker, systemPollTicker, reportTicker)
 
 	return nil
 }

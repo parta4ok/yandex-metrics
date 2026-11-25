@@ -17,6 +17,7 @@ import (
 	"github.com/parta4ok/yandex-metrics/metrics/internal/port/testdata"
 	"github.com/parta4ok/yandex-metrics/toolkit/logger/noop"
 	unconfiguredpinger "github.com/parta4ok/yandex-metrics/toolkit/pinger/unconfigured"
+	"github.com/parta4ok/yandex-metrics/toolkit/signature"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
@@ -711,4 +712,118 @@ func TestServer_TemporaryErrorReturnsServiceUnavailable(t *testing.T) {
 			require.NotContains(t, resp.Body.String(), entities.ErrTemporary.Error())
 		})
 	}
+}
+
+func newSignedTestServer(t *testing.T) (*public.Server, *testdata.MockMetricServiceProvider, *signature.Signer) {
+	t.Helper()
+
+	ctrl := gomock.NewController(t)
+	t.Cleanup(ctrl.Finish)
+
+	service := testdata.NewMockMetricServiceProvider(ctrl)
+	server, err := public.NewServer(serverConfig(":8080"), service, noop.New(), public.WithSignature("secret"))
+	require.NoError(t, err)
+
+	signer, err := signature.NewSigner("secret")
+	require.NoError(t, err)
+
+	return server, service, signer
+}
+
+func TestServerSignature_ValidRequestAndSignedResponse(t *testing.T) {
+	t.Parallel()
+
+	server, service, signer := newSignedTestServer(t)
+	service.EXPECT().
+		UpdateMetric(gomock.Any(), gomock.Any()).
+		Return(newCounterMetric(t, "requests", 5), nil)
+
+	const body = `{"id":"requests","type":"counter","delta":2}`
+	req := newJSONRequest("/update", body, "application/json")
+	req.Header.Set(signature.Header, signer.Sign([]byte(body)))
+
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+
+	require.Equal(t, http.StatusOK, resp.Code)
+	require.JSONEq(t, `{"id":"requests","type":"counter","delta":5}`, resp.Body.String())
+	require.True(t, signer.Verify(resp.Body.Bytes(), resp.Header().Get(signature.Header)))
+}
+
+func TestServerSignature_InvalidSignatureIsRejected(t *testing.T) {
+	t.Parallel()
+
+	server, _, signer := newSignedTestServer(t)
+
+	req := newJSONRequest("/update", `{"id":"requests","type":"counter","delta":2}`, "application/json")
+	req.Header.Set(signature.Header, signer.Sign([]byte("another body")))
+
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+
+	require.Equal(t, http.StatusBadRequest, resp.Code)
+}
+
+func TestServerSignature_RequestWithoutHeaderIsAcceptedAndResponseIsSigned(t *testing.T) {
+	t.Parallel()
+
+	server, service, signer := newSignedTestServer(t)
+	service.EXPECT().Ping(gomock.Any()).Return(nil)
+
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, httptest.NewRequest(http.MethodGet, "/ping", nil))
+
+	require.Equal(t, http.StatusOK, resp.Code)
+	require.True(t, signer.Verify(nil, resp.Header().Get(signature.Header)))
+}
+
+func TestServerSignature_BatchWithGzip(t *testing.T) {
+	t.Parallel()
+
+	server, service, signer := newSignedTestServer(t)
+	service.EXPECT().
+		UpdateMetrics(gomock.Any(), gomock.Any()).
+		Return([]*entities.Metric{newCounterMetric(t, "requests", 2)}, nil)
+
+	const body = `[{"id":"requests","type":"counter","delta":2}]`
+	var compressed bytes.Buffer
+	writer := gzip.NewWriter(&compressed)
+	_, err := writer.Write([]byte(body))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	req := httptest.NewRequest(http.MethodPost, "/updates/", &compressed)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Encoding", "gzip")
+	req.Header.Set("Accept-Encoding", "gzip")
+	req.Header.Set(signature.Header, signer.Sign([]byte(body)))
+
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+
+	require.Equal(t, http.StatusOK, resp.Code)
+	require.Equal(t, "gzip", resp.Header().Get("Content-Encoding"))
+
+	reader, err := gzip.NewReader(resp.Body)
+	require.NoError(t, err)
+	responseBody, err := io.ReadAll(reader)
+	require.NoError(t, err)
+	require.JSONEq(t, `[{"id":"requests","type":"counter","delta":2}]`, string(responseBody))
+	require.True(t, signer.Verify(responseBody, resp.Header().Get(signature.Header)))
+}
+
+func TestServerSignature_DisabledWithoutKey(t *testing.T) {
+	t.Parallel()
+
+	server, service := newTestServer(t)
+	service.EXPECT().Ping(gomock.Any()).Return(nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/ping", nil)
+	req.Header.Set(signature.Header, "garbage")
+
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+
+	require.Equal(t, http.StatusOK, resp.Code)
+	require.Empty(t, resp.Header().Get(signature.Header))
 }

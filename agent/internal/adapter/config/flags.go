@@ -13,6 +13,8 @@ const (
 	addressFlag        = "a"
 	reportIntervalFlag = "r"
 	pollIntervalFlag   = "p"
+	signatureKeyFlag   = "k"
+	rateLimitFlag      = "l"
 )
 
 type cliFlags struct {
@@ -22,6 +24,8 @@ type cliFlags struct {
 	address        string
 	reportInterval int
 	pollInterval   int
+	signatureKey   string
+	rateLimit      int
 }
 
 func newCLIFlags() *cliFlags {
@@ -34,6 +38,8 @@ func newCLIFlags() *cliFlags {
 	flags.set.StringVar(&flags.address, addressFlag, "", "metrics server address (default localhost:8080)")
 	flags.set.IntVar(&flags.reportInterval, reportIntervalFlag, 0, "report interval in seconds (default 10)")
 	flags.set.IntVar(&flags.pollInterval, pollIntervalFlag, 0, "poll interval in seconds (default 2)")
+	flags.set.IntVar(&flags.rateLimit, rateLimitFlag, 0, "maximum number of concurrent requests to the server (default 1)")
+	flags.set.StringVar(&flags.signatureKey, signatureKeyFlag, "", "signature key, empty disables signing (default empty)")
 
 	return flags
 }

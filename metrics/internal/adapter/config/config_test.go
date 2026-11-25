@@ -230,3 +230,36 @@ metrics:
 	require.NoError(t, err)
 	require.Empty(t, empty.DatabaseDSN())
 }
+
+func TestNewConfig_SignatureKey(t *testing.T) {
+	t.Parallel()
+
+	path := writeConfig(t, `
+metrics:
+  signature:
+    key: file-key
+`)
+
+	fromFile, err := config.NewConfig([]string{"-config", path}, nil)
+	require.NoError(t, err)
+	require.Equal(t, "file-key", fromFile.SignatureKey())
+
+	fromFlag, err := config.NewConfig([]string{"-config", path, "-k", "flag-key"}, nil)
+	require.NoError(t, err)
+	require.Equal(t, "flag-key", fromFlag.SignatureKey())
+
+	fromEnviron, err := config.NewConfig(
+		[]string{"-config", path, "-k", "flag-key"},
+		[]string{"KEY=env-key"},
+	)
+	require.NoError(t, err)
+	require.Equal(t, "env-key", fromEnviron.SignatureKey())
+
+	emptyEnviron, err := config.NewConfig([]string{"-config", path}, []string{"KEY="})
+	require.NoError(t, err)
+	require.Empty(t, emptyEnviron.SignatureKey())
+
+	disabled, err := config.NewConfig([]string{"-config", writeConfig(t, "metrics: {}\n")}, nil)
+	require.NoError(t, err)
+	require.Empty(t, disabled.SignatureKey())
+}

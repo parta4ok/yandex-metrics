@@ -20,6 +20,10 @@ type DatabaseConfig interface {
 	DatabaseDSN() string
 }
 
+type SignatureConfig interface {
+	SignatureKey() string
+}
+
 type BackupConfig interface {
 	StoreInterval() time.Duration
 	FileStoragePath() string

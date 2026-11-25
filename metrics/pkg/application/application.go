@@ -204,6 +204,10 @@ func (app *Application) buildServer() error {
 		)
 	}
 
+	if app.SignatureKey() != "" {
+		options = append(options, public.WithSignature(app.SignatureKey()))
+	}
+
 	server, err := public.NewServer(app.ConfigProvider, app.service, app.logger, options...)
 	if err != nil {
 		return errors.Wrap(err, "build public HTTP server")
